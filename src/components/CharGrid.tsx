@@ -176,39 +176,44 @@ const CharView: m.Component = {
 
     return (
       <div
-        style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;height:100dvh;overflow:hidden;user-select:none;cursor:ns-resize;touch-action:none;padding:0 1rem;box-sizing:border-box"
+        style="display:flex;flex-direction:column;align-items:center;height:100vh;height:100dvh;overflow:hidden;user-select:none;cursor:ns-resize;touch-action:none;padding:0 0.5rem;box-sizing:border-box"
       >
         {/* Counter at top */}
-        <small style="opacity:0.4;font-family:monospace;position:absolute;top:0.5rem;font-size:clamp(0.7rem,2.5vw,0.9rem)">
+        <small style="opacity:0.4;font-family:monospace;padding:0.5rem 0;font-size:clamp(0.7rem,2.5vw,0.9rem);flex-shrink:0">
           {index + 1}/{SYLLABLE_COUNT.toLocaleString()}
         </small>
 
-        {/* The character */}
-        <div style="font-size:clamp(6rem,35vw,20rem);line-height:1">{info.char}</div>
+        {/* The character — fills remaining space, shrinks if needed */}
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;width:100%">
+          <div style="font-size:min(35vw,45vh,20rem);line-height:1">{info.char}</div>
+        </div>
 
-        {/* Code point + encodings */}
-        <p style="margin:0.5rem 0 0;font-size:clamp(0.9rem,3.5vw,1.4rem);font-family:monospace;opacity:0.7">
-          {info.hex}
-        </p>
-        <small style="opacity:0.45;font-family:monospace;text-align:center;line-height:1.8;font-size:clamp(0.6rem,2.5vw,0.85rem)">
-          UTF-8: {enc.utf8} · UTF-16: {enc.utf16} · UTF-32: {enc.utf32}
-        </small>
+        {/* Bottom info section — fixed size, never cut off */}
+        <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;width:100%;padding-bottom:env(safe-area-inset-bottom,0.5rem)">
+          {/* Code point + encodings */}
+          <p style="margin:0;font-size:clamp(0.9rem,3.5vw,1.4rem);font-family:monospace;opacity:0.7">
+            {info.hex}
+          </p>
+          <small style="opacity:0.45;font-family:monospace;text-align:center;line-height:1.6;font-size:clamp(0.6rem,2.5vw,0.85rem)">
+            UTF-8: {enc.utf8} · UTF-16: {enc.utf16} · UTF-32: {enc.utf32}
+          </small>
 
-        {/* Jamo decomposition */}
-        <div
-          style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;align-items:center;justify-items:center;width:100%;max-width:40rem;margin-top:0.75rem;padding:0.75rem 0;border-top:1px solid var(--pico-muted-border-color)"
-        >
-          {renderJamo(jamo.leading)}
-          <span style="font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3">+</span>
-          {renderJamo(jamo.vowel)}
-          <span style={`font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3;visibility:${jamo.trailing ? "visible" : "hidden"}`}>+</span>
-          <div style={`visibility:${jamo.trailing ? "visible" : "hidden"}`}>
-            {renderJamo(jamo.trailing || jamo.vowel)}
-          </div>
-          <span style="font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3">=</span>
-          <div style="text-align:center">
-            <div style="font-size:clamp(1.8rem,8vw,3.5rem);line-height:1.1">{info.char}</div>
-            <small style="opacity:0.6;font-size:clamp(0.55rem,2.5vw,0.75rem)">Syllable</small>
+          {/* Jamo decomposition */}
+          <div
+            style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;align-items:center;justify-items:center;width:100%;max-width:40rem;margin-top:0.5rem;padding:0.5rem 0;border-top:1px solid var(--pico-muted-border-color)"
+          >
+            {renderJamo(jamo.leading)}
+            <span style="font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3">+</span>
+            {renderJamo(jamo.vowel)}
+            <span style={`font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3;visibility:${jamo.trailing ? "visible" : "hidden"}`}>+</span>
+            <div style={`visibility:${jamo.trailing ? "visible" : "hidden"}`}>
+              {renderJamo(jamo.trailing || jamo.vowel)}
+            </div>
+            <span style="font-size:clamp(0.9rem,3vw,1.5rem);opacity:0.3">=</span>
+            <div style="text-align:center">
+              <div style="font-size:clamp(1.8rem,8vw,3.5rem);line-height:1.1">{info.char}</div>
+              <small style="opacity:0.6;font-size:clamp(0.55rem,2.5vw,0.75rem)">Syllable</small>
+            </div>
           </div>
         </div>
       </div>
