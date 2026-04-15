@@ -13,7 +13,7 @@ if (!result.success) {
   process.exit(1);
 }
 
-cpSync("public/index.html", "dist/index.html");
+cpSync("public", "dist", { recursive: true });
 
 const kb = (n: number) => (n / 1024).toFixed(1);
 for (const output of result.outputs) {
