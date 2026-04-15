@@ -97,10 +97,10 @@ function startIdleTimer() {
 function renderJamo(jamo: JamoInfo) {
   return (
     <div style="text-align:center">
-      <div style="font-size:min(8vw,8vh);line-height:1.1">{jamo.compatChar}</div>
-      <small style="opacity:0.6">{jamo.roleName}</small>
+      <div style="font-size:clamp(1.5rem,6vw,3.5rem);line-height:1.1">{jamo.compatChar}</div>
+      <small style="opacity:0.6;font-size:clamp(0.5rem,1.5vw,0.75rem)">{jamo.roleName}</small>
       <br />
-      <small style="opacity:0.5;font-family:monospace">{jamo.compatHex}</small>
+      <small style="opacity:0.5;font-family:monospace;font-size:clamp(0.5rem,1.3vw,0.7rem)">{jamo.compatHex}</small>
     </div>
   );
 }
@@ -113,6 +113,32 @@ const CharView: m.Component = {
     };
     vnode.dom.addEventListener("wheel", wheel, { passive: false });
     (vnode as any)._wheel = wheel;
+
+    // Touch/swipe support
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    const touchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    };
+    const touchEnd = (e: TouchEvent) => {
+      const dy = touchStartY - e.changedTouches[0].clientY;
+      const dt = Date.now() - touchStartTime;
+      // Minimum 20px swipe within 500ms
+      if (Math.abs(dy) > 20 && dt < 500) {
+        e.preventDefault();
+        advance(dy > 0 ? 1 : -1);
+      }
+    };
+    const touchMove = (e: TouchEvent) => {
+      e.preventDefault();
+    };
+    vnode.dom.addEventListener("touchstart", touchStart, { passive: true });
+    vnode.dom.addEventListener("touchend", touchEnd, { passive: false });
+    vnode.dom.addEventListener("touchmove", touchMove, { passive: false });
+    (vnode as any)._touchStart = touchStart;
+    (vnode as any)._touchEnd = touchEnd;
+    (vnode as any)._touchMove = touchMove;
 
     const key = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); advance(1); }
@@ -134,6 +160,9 @@ const CharView: m.Component = {
 
   onremove(vnode: any) {
     vnode.dom.removeEventListener("wheel", (vnode as any)._wheel);
+    vnode.dom.removeEventListener("touchstart", (vnode as any)._touchStart);
+    vnode.dom.removeEventListener("touchend", (vnode as any)._touchEnd);
+    vnode.dom.removeEventListener("touchmove", (vnode as any)._touchMove);
     document.removeEventListener("keydown", (vnode as any)._key);
     window.removeEventListener("hashchange", (vnode as any)._hash);
     if (idleTimer) clearTimeout(idleTimer);
@@ -157,31 +186,31 @@ const CharView: m.Component = {
         </small>
 
         {/* The character */}
-        <div style="font-size:min(50vw,50vh);line-height:1">{info.char}</div>
+        <div style="font-size:min(40vw,45vh);line-height:1">{info.char}</div>
 
         {/* Code point + encodings */}
-        <p style="margin:0.5rem 0 0;font-size:1.4rem;font-family:monospace;opacity:0.7">
+        <p style="margin:0.5rem 0 0;font-size:clamp(0.8rem,2.5vw,1.4rem);font-family:monospace;opacity:0.7">
           {info.hex}
         </p>
-        <small style="opacity:0.45;font-family:monospace;text-align:center;line-height:1.8">
+        <small style="opacity:0.45;font-family:monospace;text-align:center;line-height:1.8;font-size:clamp(0.6rem,1.8vw,0.85rem);padding:0 0.5rem">
           UTF-8: {enc.utf8} · UTF-16: {enc.utf16} · UTF-32: {enc.utf32}
         </small>
 
-        {/* Jamo decomposition — fixed 7-column grid: L + V + T = S */}
+        {/* Jamo decomposition */}
         <div
-          style="display:grid;grid-template-columns:5rem 1.5rem 5rem 1.5rem 5rem 1.5rem 5rem;gap:0.5rem;align-items:center;justify-items:center;margin-top:1.5rem;padding:1rem;border-top:1px solid var(--pico-muted-border-color)"
+          style="display:grid;grid-template-columns:repeat(7,minmax(2rem,5rem));gap:0.25rem;align-items:center;justify-items:center;margin-top:1rem;padding:0.75rem 0.5rem;border-top:1px solid var(--pico-muted-border-color)"
         >
           {renderJamo(jamo.leading)}
-          <span style="font-size:1.5rem;opacity:0.3">+</span>
+          <span style="font-size:clamp(0.8rem,2vw,1.5rem);opacity:0.3">+</span>
           {renderJamo(jamo.vowel)}
-          <span style={`font-size:1.5rem;opacity:0.3;visibility:${jamo.trailing ? "visible" : "hidden"}`}>+</span>
+          <span style={`font-size:clamp(0.8rem,2vw,1.5rem);opacity:0.3;visibility:${jamo.trailing ? "visible" : "hidden"}`}>+</span>
           <div style={`visibility:${jamo.trailing ? "visible" : "hidden"}`}>
             {renderJamo(jamo.trailing || jamo.vowel)}
           </div>
-          <span style="font-size:1.5rem;opacity:0.3">=</span>
+          <span style="font-size:clamp(0.8rem,2vw,1.5rem);opacity:0.3">=</span>
           <div style="text-align:center">
-            <div style="font-size:min(8vw,8vh);line-height:1.1">{info.char}</div>
-            <small style="opacity:0.6">Syllable</small>
+            <div style="font-size:clamp(1.5rem,6vw,3.5rem);line-height:1.1">{info.char}</div>
+            <small style="opacity:0.6;font-size:clamp(0.5rem,1.5vw,0.75rem)">Syllable</small>
           </div>
         </div>
       </div>
