@@ -17,13 +17,17 @@ if (isProd && "serviceWorker" in navigator) {
         reg.addEventListener("updatefound", () => {
           const nw = reg.installing;
           if (!nw) return;
-          nw.addEventListener("statechange", () => {
+          const onChange = () => {
             if (nw.state === "installed" && navigator.serviceWorker.controller) {
+              nw.removeEventListener("statechange", onChange);
               // ServiceWorker.postMessage takes no targetOrigin (unlike Window.postMessage)
               // oxlint-disable-next-line unicorn/require-post-message-target-origin
               showUpdateToast(() => nw.postMessage("SKIP_WAITING"));
+            } else if (nw.state === "redundant" || nw.state === "activated") {
+              nw.removeEventListener("statechange", onChange);
             }
-          });
+          };
+          nw.addEventListener("statechange", onChange);
         });
         return reg;
       })
@@ -60,7 +64,15 @@ function showUpdateToast(onReload: () => void) {
   btn.className = "underline opacity-80 hover:opacity-100 cursor-pointer";
   btn.addEventListener("click", onReload);
 
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss");
+  close.className = "opacity-60 hover:opacity-100 cursor-pointer text-lg leading-none";
+  close.addEventListener("click", () => root.remove());
+
   root.appendChild(text);
   root.appendChild(btn);
+  root.appendChild(close);
   document.body.appendChild(root);
 }

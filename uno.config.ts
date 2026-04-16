@@ -140,8 +140,7 @@ export default defineConfig({
         ::view-transition-image-pair(root),
         ::view-transition-old(root),
         ::view-transition-new(root) {
-          animation: none !important;
-          display: none !important;
+          animation-duration: 0.001s !important;
         }
 
         /* View transition: short crossfade on the big glyph when the

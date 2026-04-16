@@ -317,10 +317,6 @@ function lockedPosition(): number {
   return nav.lockedPosition(index, getLocks());
 }
 
-function matchesLock(idx: number): boolean {
-  return nav.matchesLock(idx, getLocks());
-}
-
 function stepWithLocks(delta: number): number {
   return nav.stepWithLocks(index, delta, getLocks());
 }

@@ -15,7 +15,7 @@ import {
   NO_LOCKS,
   type Locks,
 } from "./nav";
-import { HANGUL_SYLLABLES, SYLLABLE_COUNT, L_COUNT, V_COUNT, T_COUNT } from "./data/unicode";
+import { SYLLABLE_COUNT, L_COUNT, V_COUNT, T_COUNT } from "./data/unicode";
 
 // 가 = AC00, index 0
 // 한 = D55C, index = D55C - AC00 = 0x95C = 2396
