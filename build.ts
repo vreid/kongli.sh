@@ -1,4 +1,5 @@
 import { cpSync, readFileSync, writeFileSync } from "fs";
+import { generateSyllablePages } from "./scripts/gen-syllable-pages";
 
 const result = await Bun.build({
   entrypoints: ["src/index.tsx"],
@@ -37,7 +38,13 @@ if (uno.exitCode !== 0) {
   process.exit(1);
 }
 
+const pages = generateSyllablePages("dist");
+
 const kb = (n: number) => (n / 1024).toFixed(1);
 for (const output of result.outputs) {
   console.log(`  ${output.path.split(/[\\/]/).pop()}  ${kb(output.size)} KB`);
 }
+console.log(
+  `  per-syllable OG: ${pages.files.toLocaleString()} files, ` +
+    `${(pages.bytes / 1024 / 1024).toFixed(1)} MB`,
+);

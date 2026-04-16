@@ -1,0 +1,16 @@
+/* TEAM */
+  Creator: vreid
+  Contact: konglish [at] vreid.dev
+  Site: https://kongli.sh
+  Source: https://github.com/vreid/kongli.sh
+
+/* THANKS */
+  The Unicode Consortium, for codifying Hangul so cleanly.
+  King Sejong the Great and the Hall of Worthies, for 훈민정음 (1443).
+
+/* SITE */
+  Last update: 2026-04-16
+  Language: English / 한국어 glyphs
+  Doctype: HTML5
+  Components: Mithril, UnoCSS, Bun
+  Standards: HTML5, CSS3, ES2022

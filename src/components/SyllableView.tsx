@@ -114,6 +114,34 @@ function getStep(): number {
   return Math.min(256, Math.pow(2, Math.floor(scrollStreak / 3)));
 }
 
+// Honor prefers-reduced-motion for all opt-in animations on the page. We
+// read this lazily (not cached) so the user flipping the OS setting
+// mid-session takes effect without a reload.
+function reducedMotion(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+// CSS view transitions: briefly crossfade the big glyph when the index
+// lands. We only wrap the final state mutation (not the smooth-scroll
+// tween, which animates independently), and skip entirely if reduced
+// motion is requested or the API is missing.
+interface ViewTransitionDocument extends Document {
+  startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+}
+
+function withViewTransition(fn: () => void) {
+  const doc = document as ViewTransitionDocument;
+  if (!doc.startViewTransition || reducedMotion()) {
+    fn();
+    return;
+  }
+  doc.startViewTransition(fn);
+}
+
 function setIndex(next: number) {
   const n = SYLLABLE_COUNT;
   let wrapped: number;
@@ -122,11 +150,13 @@ function setIndex(next: number) {
   } else {
     wrapped = Math.max(0, Math.min(n - 1, next));
   }
-  index = wrapped;
-  writeHash();
-  scheduleHistoryPush();
-  stopAutoScroll();
-  m.redraw();
+  withViewTransition(() => {
+    index = wrapped;
+    writeHash();
+    scheduleHistoryPush();
+    stopAutoScroll();
+    m.redraw.sync();
+  });
 }
 
 // Cycle direction: wrap vs clamp at the ends (persisted).
@@ -803,6 +833,10 @@ function HelpOverlay() {
           <kbd class="font-mono">a</kbd> to auto-advance.
         </p>
         <p class="mt-4 text-xs opacity-50">
+          <a class="underline hover:opacity-100" href="/about.html">
+            About
+          </a>
+          {" · "}
           <a class="underline hover:opacity-100" href="/privacy.html">
             Privacy
           </a>
@@ -975,6 +1009,10 @@ function PositionCounter() {
 function FooterLinks() {
   return (
     <div class="fixed right-2 bottom-2 z-10 text-[0.65rem] opacity-40 hover:opacity-80 leading-none">
+      <a class="underline" href="/about.html">
+        About
+      </a>
+      {" · "}
       <a class="underline" href="/privacy.html">
         Privacy
       </a>
@@ -1228,7 +1266,7 @@ const SyllableView: m.Component = {
             class="text-[min(35vw,45vh,20rem)] leading-none cursor-pointer will-change-transform"
             style={(() => {
               const o = computeGlyphOffset(info.char);
-              return `transform: translate(${o.dx}em, ${o.dy}em)`;
+              return `transform: translate(${o.dx}em, ${o.dy}em); view-transition-name: big-glyph`;
             })()}
             title="Click to copy"
             onclick={(e: MouseEvent) => {

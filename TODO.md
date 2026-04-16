@@ -18,10 +18,7 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 ## Visual polish
 
-- **Per-syllable OG images** — generate for each syllable so `kongli.sh/#한`
-  gets a rich preview. Pre-generate or use SVG OG images.
-- **CSS view transitions** (`@view-transition`) — animate the syllable swap with
-  a short crossfade.
+- _(done)_ Per-syllable OG images and CSS view transitions
 
 ## Accessibility
 
@@ -50,9 +47,7 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 ## Content / meta
 
-- **/about page** explaining 11,172 = 19 × 21 × 28 and Unicode ordering.
-- **humans.txt** with author credit.
-- **Sitemap** for `/` and `/about` (one entry per syllable is overkill).
+- _(done)_ /about page, humans.txt, sitemap.xml
 
 ## Wilder ideas
 

@@ -10,6 +10,7 @@ const ASSETS = [
   "/uno.css",
   "/favicon.svg",
   "/manifest.webmanifest",
+  "/about.html",
   "/privacy.html",
 ];
 

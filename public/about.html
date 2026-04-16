@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About — kongli.sh</title>
+    <meta
+      name="description"
+      content="Why there are exactly 11,172 Hangul syllables, how they're ordered in Unicode, and what kongli.sh does with them."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/index.css" />
+    <link rel="stylesheet" href="/uno.css" />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://kongli.sh/about.html" />
+    <meta property="og:title" content="About — kongli.sh" />
+    <meta
+      property="og:description"
+      content="Why there are exactly 11,172 Hangul syllables, how they're ordered in Unicode, and what kongli.sh does with them."
+    />
+    <meta property="og:image" content="https://kongli.sh/og.png" />
+  </head>
+  <body class="m-0 font-sans bg-white text-black dark:bg-black dark:text-white leading-relaxed">
+    <main class="max-w-2xl mx-auto px-5 py-10 text-sm">
+      <p class="mb-6">
+        <a href="/" class="opacity-70 hover:opacity-100 underline">← kongli.sh</a>
+      </p>
+
+      <h1 class="text-2xl font-semibold mt-0 mb-1">About kongli.sh</h1>
+      <p class="opacity-60 mt-0">A tour through all 11,172 Hangul syllables.</p>
+
+      <h2 class="text-lg font-semibold mt-8 mb-2">Why 11,172?</h2>
+      <p>Modern Hangul composes a syllable from up to three slots:</p>
+      <ul>
+        <li>
+          <strong>Initial (초성 / choseong)</strong> — one of
+          <span class="font-mono">19</span> leading consonants, including the silent
+          <span lang="ko" class="font-mono">ㅇ</span>.
+        </li>
+        <li>
+          <strong>Medial (중성 / jungseong)</strong> — one of
+          <span class="font-mono">21</span> vowels (simple and compound).
+        </li>
+        <li>
+          <strong>Final (종성 / jongseong)</strong> — one of
+          <span class="font-mono">27</span> trailing consonants <em>or</em> none at all, giving
+          <span class="font-mono">28</span> options.
+        </li>
+      </ul>
+      <p>Every slot combination produces a valid, well-formed syllable block:</p>
+      <p class="font-mono text-center my-4 text-base">19 × 21 × 28 = 11,172</p>
+      <p>
+        That is exactly the count of the
+        <a
+          class="underline"
+          href="https://en.wikipedia.org/wiki/Hangul_Syllables"
+          rel="noopener noreferrer"
+          target="_blank"
+          ><strong>Hangul Syllables</strong></a
+        >
+        Unicode block (<span class="font-mono">U+AC00</span>–<span class="font-mono">U+D7A3</span>).
+        No gaps, no reserved code points, no surprises.
+      </p>
+
+      <h2 class="text-lg font-semibold mt-8 mb-2">How they're ordered</h2>
+      <p>
+        Unicode lays the block out in lexicographic (L, V, T) order. Given indices
+        <span class="font-mono">l ∈ [0, 19)</span>, <span class="font-mono">v ∈ [0, 21)</span>,
+        <span class="font-mono">t ∈ [0, 28)</span>, the code point is:
+      </p>
+      <p class="font-mono text-center my-4">U+AC00 + (l × 588) + (v × 28) + t</p>
+      <p>
+        where <span class="font-mono">588 = 21 × 28</span> is the number of syllables that share a
+        leading consonant. It's a straight mixed-radix encoding, which is why so many operations on
+        Hangul reduce to integer arithmetic:
+      </p>
+      <ul>
+        <li>
+          Decomposing a syllable into its jamo → successive division and modulo by
+          <span class="font-mono">588</span> and <span class="font-mono">28</span>.
+        </li>
+        <li>
+          "Next syllable with the same initial" → add <span class="font-mono">1</span>, clamp at
+          <span class="font-mono">588</span>.
+        </li>
+        <li>
+          "Same initial and vowel, different final" → <span class="font-mono">t</span> cycles 0–27.
+        </li>
+      </ul>
+      <p>
+        The arrow keys, <span class="font-mono">PageUp</span> /
+        <span class="font-mono">PageDown</span>, and <span class="font-mono">Home</span> /
+        <span class="font-mono">End</span> on the main page all map directly to these arithmetic
+        steps.
+      </p>
+
+      <h2 class="text-lg font-semibold mt-8 mb-2">What about the jamo blocks?</h2>
+      <p>
+        Hangul in Unicode is split across several blocks. kongli.sh only scrolls through
+        <em>Hangul Syllables</em>; the other blocks appear as the decomposition pieces shown under
+        the big syllable:
+      </p>
+      <ul>
+        <li>
+          <strong>Hangul Jamo</strong> (<span class="font-mono">U+1100–U+11FF</span>) — the
+          conjoining jamo used to compose syllables algorithmically.
+        </li>
+        <li>
+          <strong>Hangul Compatibility Jamo</strong> (<span class="font-mono">U+3130–U+318F</span>)
+          — standalone jamo for display, legacy compatibility, and what you usually see on Korean
+          keyboards.
+        </li>
+        <li>
+          <strong>Hangul Jamo Extended-A / B</strong> — rare historical letters, out of scope here.
+        </li>
+      </ul>
+      <p>
+        The 11,172 precomposed syllables are canonically equivalent to their conjoining-jamo
+        decompositions (NFD), which is handy: you can paste a syllable into almost any text
+        processor and split it via standard Unicode normalization.
+      </p>
+
+      <h2 class="text-lg font-semibold mt-8 mb-2">What this site does</h2>
+      <p>
+        kongli.sh is a single static page that lets you scroll, jump, search, and bookmark across
+        the whole block; see romanization and encodings for each syllable; and lock one or more jamo
+        slots to restrict navigation to a filtered subset. Everything runs in the browser — no
+        backend, no accounts, no tracking. See
+        <a class="underline" href="/privacy.html">Privacy</a> for details.
+      </p>
+      <p>
+        Source:
+        <a
+          class="underline"
+          href="https://github.com/vreid/kongli.sh"
+          rel="noopener noreferrer"
+          target="_blank"
+          >github.com/vreid/kongli.sh</a
+        >.
+      </p>
+    </main>
+  </body>
+</html>
