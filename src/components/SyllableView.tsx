@@ -972,6 +972,16 @@ function PositionCounter() {
   );
 }
 
+function FooterLinks() {
+  return (
+    <div class="fixed right-2 bottom-2 z-10 text-[0.65rem] opacity-40 hover:opacity-80 leading-none">
+      <a class="underline" href="/privacy.html">
+        Privacy
+      </a>
+    </div>
+  );
+}
+
 const SyllableView: m.Component = {
   oncreate(vnode: any) {
     // Theme init
@@ -1267,6 +1277,7 @@ const SyllableView: m.Component = {
         </div>
 
         {PositionCounter()}
+        {FooterLinks()}
         {HelpOverlay()}
         {m(GotoOverlay)}
         {BookmarksOverlay()}
