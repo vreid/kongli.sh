@@ -36,13 +36,12 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 ## Code / DX
 
-- **Component tests** with happy-dom — index bounds, keyboard handlers, bookmark
-  toggling, locks.
-- **Playwright smoke test in CI** — page loads, arrow-down advances hash.
-- **Typed state container** — extract the module-level `let`s (`index`, `theme`,
-  `helpOpen`, …) into a small typed `state.ts` for testability.
-- **Lighthouse CI** — enforce 100s for performance/accessibility/best
-  practices/SEO.
+- _(done)_ Pure navigation helpers extracted to `src/nav.ts` with unit tests
+  covering index bounds, locks, step-with-locks, neighbor axis, and goto parsing
+- _(done)_ Happy-dom smoke tests in `src/app.smoke.test.ts` — mount, arrow
+  navigation, bookmark toggle, mute toggle, help overlay
+- _(done)_ Lighthouse CI workflow enforcing performance / accessibility /
+  best-practices / SEO ≥ 95 on every PR
 
 ## Content / meta
 

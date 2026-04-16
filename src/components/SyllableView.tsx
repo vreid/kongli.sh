@@ -10,11 +10,12 @@ import {
   getEncodings,
   decomposeSyllable,
   romanize,
-  romanToIndex,
   type JamoInfo,
 } from "../data/unicode";
 import examplesData from "../data/examples.json";
 import { ETYMOLOGY } from "../data/etymology";
+import * as nav from "../nav";
+import { decompose, compose, wrapIndex } from "../nav";
 
 const examples = examplesData as Record<string, string[]>;
 
@@ -298,49 +299,30 @@ function setLockT(v: number | null) {
 }
 
 function anyLock(): boolean {
-  return lockL !== null || lockV !== null || lockT !== null;
+  return nav.anyLock(getLocks());
+}
+
+function getLocks(): nav.Locks {
+  return { l: lockL, v: lockV, t: lockT };
 }
 
 // Total number of syllables still reachable given the current locks, and
 // the 0-based rank of the current syllable among them. Used by the bottom
 // counter so "X / Y" reflects the filtered universe, not the full 11,172.
 function lockedTotal(): number {
-  let total = 1;
-  if (lockL === null) total *= L_COUNT;
-  if (lockV === null) total *= V_COUNT;
-  if (lockT === null) total *= T_COUNT;
-  return total;
+  return nav.lockedTotal(getLocks());
 }
 
 function lockedPosition(): number {
-  const [l, v, t] = decompose(index);
-  let pos = 0;
-  if (lockL === null) pos = pos * L_COUNT + l;
-  if (lockV === null) pos = pos * V_COUNT + v;
-  if (lockT === null) pos = pos * T_COUNT + t;
-  return pos;
+  return nav.lockedPosition(index, getLocks());
 }
 
 function matchesLock(idx: number): boolean {
-  const [l, v, t] = decompose(idx);
-  if (lockL !== null && l !== lockL) return false;
-  if (lockV !== null && v !== lockV) return false;
-  if (lockT !== null && t !== lockT) return false;
-  return true;
+  return nav.matchesLock(idx, getLocks());
 }
 
 function stepWithLocks(delta: number): number {
-  if (!anyLock()) return index + delta;
-  const dir = delta > 0 ? 1 : -1;
-  let remaining = Math.abs(delta);
-  let cur = index;
-  const n = SYLLABLE_COUNT;
-  let safety = n;
-  while (remaining > 0 && safety-- > 0) {
-    cur = (((cur + dir) % n) + n) % n;
-    if (matchesLock(cur)) remaining--;
-  }
-  return cur;
+  return nav.stepWithLocks(index, delta, getLocks());
 }
 
 // Hover highlight was explored but dropped: splitting the composed syllable
@@ -367,31 +349,24 @@ function jumpBy(delta: number) {
 // Composable navigation: cycle a single jamo component (leading / vowel /
 // trailing) while keeping the other two fixed. Scrolling the trailing
 // includes the "no trailing" slot (28 options).
-function decompose(i: number): [number, number, number] {
-  return [Math.floor(i / N_COUNT), Math.floor((i % N_COUNT) / T_COUNT), i % T_COUNT];
-}
-
-function compose(l: number, v: number, t: number): number {
-  return l * N_COUNT + v * T_COUNT + t;
-}
 
 function cycleLeading(delta: number) {
   const [l, v, t] = decompose(index);
-  const nl = (((l + delta) % L_COUNT) + L_COUNT) % L_COUNT;
+  const nl = wrapIndex(L_COUNT, l + delta);
   if (lockL !== null) lockL = nl;
   setIndex(compose(nl, v, t));
 }
 
 function cycleVowel(delta: number) {
   const [l, v, t] = decompose(index);
-  const nv = (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT;
+  const nv = wrapIndex(V_COUNT, v + delta);
   if (lockV !== null) lockV = nv;
   setIndex(compose(l, nv, t));
 }
 
 function cycleTrailing(delta: number) {
   const [l, v, t] = decompose(index);
-  const nt = (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT;
+  const nt = wrapIndex(T_COUNT, t + delta);
   if (lockT !== null) lockT = nt;
   setIndex(compose(l, v, nt));
 }
@@ -719,40 +694,7 @@ function closeGoto() {
 }
 
 function parseGoto(raw: string): number | null {
-  const s = raw.trim();
-  if (!s) return null;
-  // Literal syllable character
-  if (s.length <= 2) {
-    const cp = s.codePointAt(0);
-    if (cp && cp >= HANGUL_SYLLABLES.rangeStart && cp <= HANGUL_SYLLABLES.rangeEnd) {
-      return cp - HANGUL_SYLLABLES.rangeStart;
-    }
-  }
-  // "position/N" or "pos/N"
-  const posMatch = s.match(/^(?:position|pos)[/:=](\d+)$/i);
-  if (posMatch) {
-    const pos = parseInt(posMatch[1], 10);
-    if (pos >= 1 && pos <= SYLLABLE_COUNT) return pos - 1;
-  }
-  // Hex code point (U+AC00, 0xAC00, #AC00, AC00)
-  const hexMatch = s.match(/^(?:u\+|0x|#)?([0-9a-f]+)$/i);
-  if (hexMatch) {
-    const n = parseInt(hexMatch[1], 16);
-    if (n >= HANGUL_SYLLABLES.rangeStart && n <= HANGUL_SYLLABLES.rangeEnd) {
-      return n - HANGUL_SYLLABLES.rangeStart;
-    }
-  }
-  // 1-based position (plain digits)
-  if (/^\d+$/.test(s)) {
-    const pos = parseInt(s, 10);
-    if (pos >= 1 && pos <= SYLLABLE_COUNT) return pos - 1;
-  }
-  // Revised-Romanization lookup (e.g. "han", "ga", "geul")
-  if (/^[a-z]+$/i.test(s)) {
-    const idx = romanToIndex(s);
-    if (idx !== null) return idx;
-  }
-  return null;
+  return nav.parseGoto(raw);
 }
 
 function submitGoto() {
@@ -1206,36 +1148,14 @@ function FooterLinks() {
 //   - 1 locked (V)          → vary L (explore onsets for this vowel)
 //   - 0 locked              → vary V
 //   - all 3 locked          → no strip (only one matching syllable)
-type NeighborAxis = "L" | "V" | "T";
+type NeighborAxis = nav.NeighborAxis;
 
 function pickNeighborAxis(): NeighborAxis | null {
-  const lCount = lockL !== null ? 1 : 0;
-  const vCount = lockV !== null ? 1 : 0;
-  const tCount = lockT !== null ? 1 : 0;
-  const locked = lCount + vCount + tCount;
-  if (locked === 3) return null;
-  if (locked === 2) {
-    if (!lCount) return "L";
-    if (!vCount) return "V";
-    return "T";
-  }
-  if (lCount) return "V";
-  if (vCount) return "L";
-  return "V";
+  return nav.pickNeighborAxis(getLocks());
 }
 
 function neighborIndex(axis: NeighborAxis, delta: number): number {
-  const [l, v, t] = decompose(index);
-  if (axis === "L") {
-    const nl = (((l + delta) % L_COUNT) + L_COUNT) % L_COUNT;
-    return compose(nl, v, t);
-  }
-  if (axis === "V") {
-    const nv = (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT;
-    return compose(l, nv, t);
-  }
-  const nt = (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT;
-  return compose(l, v, nt);
+  return nav.neighborIndex(axis, index, delta);
 }
 
 const NEIGHBOR_OFFSETS = [-2, -1, 0, 1, 2] as const;
