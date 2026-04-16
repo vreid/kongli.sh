@@ -14,6 +14,17 @@ client-side.
 - **Frontend**: Mithril.js (TSX via `tsconfig.json` `jsxFactory: "m"`)
 - **Styling**: UnoCSS (preset-wind3) — utility classes in JSX, zero hand-written
   CSS. `@unocss/reset/tailwind.css` for normalization.
+- **Font**: self-hosted **Nanum Gothic Coding** (SIL OFL) at
+  `public/fonts/NanumGothicCoding-Regular.woff2` (~655 KB). Korean monospace so
+  every syllable fills an identical cell. Declared in `public/fonts.css`,
+  preloaded from `index.html`, wired as the default `font-sans` family in
+  `uno.config.ts`, and precached by the SW.
+- **Optical centering**: the big centerpiece character is translated per-glyph
+  using Canvas `measureText` ink-bounding-box metrics so the _visual_ centroid
+  (not just the em-box) lands at the same screen position for every syllable.
+  Offsets are cached per character after `document.fonts.ready`. Keeps scrolling
+  through 가 → 힣 visually stable even though different syllables (e.g. 가 vs
+  갛) place their ink in different regions of the em-box.
 - **Serving**: GitHub Pages (static hosting) with custom domain via
   `public/CNAME`
 - **Deployment**: `.github/workflows/deploy.yml` runs format/lint/test/build on
@@ -41,11 +52,15 @@ kongli.sh/
 ├── scripts/
 │   └── gen-og.ts            # renders 1200×630 public/og.png via @napi-rs/canvas
 ├── public/
-│   ├── index.html           # mount point, links /index.css + /uno.css + /index.js
+│   ├── index.html           # mount point, links /fonts.css + /index.css + /uno.css + /index.js
 │   ├── favicon.svg
 │   ├── manifest.webmanifest
+│   ├── fonts.css            # @font-face for Nanum Gothic Coding
+│   ├── fonts/
+│   │   └── NanumGothicCoding-Regular.woff2
 │   ├── og.png               # committed OG image (regenerate with `bun run og`)
 │   ├── robots.txt
+│   ├── sw.js                # service worker (precache + cache-first)
 │   └── CNAME
 ├── src/
 │   ├── index.tsx            # imports reset CSS, mounts CharView on #app
@@ -124,9 +139,16 @@ Three vertical zones in a full-viewport flex column:
 - **OG image**: `bun run og` regenerates `public/og.png` (1200×630) via
   `@napi-rs/canvas` using the system's Korean font (committed to the repo; not
   run in CI).
+- **Service worker**: `build.ts` stamps `public/sw.js` with a unique
+  `CACHE_VERSION` (build timestamp) when copying to `dist/`. The SW precaches
+  the static assets and serves them cache-first, with `/index.html` as the
+  navigation fallback. A new version triggers an in-page "New version available
+  — Reload" toast. Registration is skipped on `localhost` / `file://` so dev is
+  unaffected.
 - **Output**: `dist/index.js`, `dist/index.css` (reset), `dist/uno.css`
   (utilities), `dist/index.html`, `dist/favicon.svg`,
-  `dist/manifest.webmanifest`, `dist/og.png`, `dist/robots.txt`, `dist/CNAME`
+  `dist/manifest.webmanifest`, `dist/og.png`, `dist/robots.txt`, `dist/sw.js`,
+  `dist/CNAME`
 
 ## Deployment
 
@@ -141,7 +163,6 @@ Not planned, but plausible:
 
 - Expose the other Korean Unicode blocks as separate scrollers (would bring back
   `BlockNav` / routing).
-- PWA / offline support (small bundle, static data — good fit).
 
 ## Notes
 

@@ -59,6 +59,48 @@ function writeHash() {
 
 index = readHash();
 
+// Optical centering: measure each glyph's ink bounding box and translate
+// the big character so its visual centroid sits at the same screen position,
+// no matter whether the syllable has a trailing consonant or not.
+const glyphOffsetCache = new Map<string, { dx: number; dy: number }>();
+const MEASURE_PX = 1000;
+const BIG_GLYPH_FONT =
+  '"Nanum Gothic Coding", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+let measureCanvas: HTMLCanvasElement | null = null;
+let fontsReady = false;
+
+function getMeasureCtx(): CanvasRenderingContext2D | null {
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  return measureCanvas.getContext("2d");
+}
+
+function computeGlyphOffset(char: string): { dx: number; dy: number } {
+  const cached = glyphOffsetCache.get(char);
+  if (cached) return cached;
+  const ctx = getMeasureCtx();
+  if (!ctx) return { dx: 0, dy: 0 };
+  ctx.font = `${MEASURE_PX}px ${BIG_GLYPH_FONT}`;
+  ctx.textBaseline = "alphabetic";
+  const tm = ctx.measureText(char);
+  const abl = tm.actualBoundingBoxLeft ?? 0;
+  const abr = tm.actualBoundingBoxRight ?? tm.width;
+  const aba = tm.actualBoundingBoxAscent ?? MEASURE_PX * 0.8;
+  const abd = tm.actualBoundingBoxDescent ?? 0;
+  const fba = tm.fontBoundingBoxAscent ?? MEASURE_PX * 0.8;
+
+  const inkCxPx = (-abl + abr) / 2;
+  const inkCyPx = fba + (-aba + abd) / 2;
+  const divCxPx = tm.width / 2;
+  const divCyPx = MEASURE_PX / 2;
+
+  const result = {
+    dx: (divCxPx - inkCxPx) / MEASURE_PX,
+    dy: (divCyPx - inkCyPx) / MEASURE_PX,
+  };
+  if (fontsReady) glyphOffsetCache.set(char, result);
+  return result;
+}
+
 let lastScrollTime = 0;
 let scrollStreak = 0;
 
@@ -585,6 +627,16 @@ const SyllableView: m.Component = {
     vnode._hash = hashChange;
 
     startIdleTimer();
+
+    // Warm up optical centering once the font is ready
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        fontsReady = true;
+        glyphOffsetCache.clear();
+        m.redraw();
+        return undefined;
+      });
+    }
   },
 
   onremove(vnode: any) {
@@ -622,7 +674,8 @@ const SyllableView: m.Component = {
           aria-label={`Hangul syllable ${info.char}, code point ${info.hex}`}
         >
           <div
-            class="text-[min(35vw,45vh,20rem)] leading-none cursor-pointer"
+            class="text-[min(35vw,45vh,20rem)] leading-none cursor-pointer will-change-transform"
+            style={`transform: translate(${computeGlyphOffset(info.char).dx}em, ${computeGlyphOffset(info.char).dy}em)`}
             title="Click to copy"
             onclick={(e: MouseEvent) => {
               e.stopPropagation();

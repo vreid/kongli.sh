@@ -1,4 +1,4 @@
-import { cpSync } from "fs";
+import { cpSync, readFileSync, writeFileSync } from "fs";
 
 const result = await Bun.build({
   entrypoints: ["src/index.tsx"],
@@ -14,6 +14,11 @@ if (!result.success) {
 }
 
 cpSync("public", "dist", { recursive: true });
+
+// Stamp the service worker with a unique cache version per build
+const swPath = "dist/sw.js";
+const cacheVersion = Date.now().toString();
+writeFileSync(swPath, readFileSync(swPath, "utf-8").replace("__CACHE_VERSION__", cacheVersion));
 
 const uno = Bun.spawnSync({
   cmd: [
