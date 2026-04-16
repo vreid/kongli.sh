@@ -501,14 +501,17 @@ function getAutoCtx(): AudioContext | null {
   return autoAudioCtx;
 }
 
-// C-major pentatonic across the 19 leading consonants → a non-grating
-// pitch ramp as you traverse the 11,172 syllables.
+// C-major pentatonic: mix all three jamo so the melody still moves when
+// any single slot is locked. Without this, locking the leading consonant
+// freezes the pitch even though the syllable is changing every tick.
 const PENTATONIC_SEMITONES = [0, 2, 4, 7, 9] as const;
 
 function pitchForIndex(i: number): number {
-  const [l] = decompose(i);
-  const step = PENTATONIC_SEMITONES[l % PENTATONIC_SEMITONES.length];
-  const octave = Math.floor(l / PENTATONIC_SEMITONES.length);
+  const [l, v, t] = decompose(i);
+  // 19 L × 21 V × 28 T = 11172 unique combos; this blend keeps every tick audible.
+  const note = l * 3 + v * 2 + t;
+  const step = PENTATONIC_SEMITONES[note % PENTATONIC_SEMITONES.length];
+  const octave = Math.floor(note / PENTATONIC_SEMITONES.length) % 4;
   const semitones = step + octave * 12;
   return 220 * Math.pow(2, semitones / 12);
 }
@@ -540,8 +543,8 @@ function isAutoScrolling(): boolean {
 const AUTO_SCROLL_ANIMATE_MIN_MS = 400;
 
 function autoScrollTick() {
-  const n = SYLLABLE_COUNT;
-  const next = (index + 1) % n;
+  const next = stepWithLocks(1);
+  if (next === index) return;
   playTick(next);
   const ms = AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx];
   if (ms >= AUTO_SCROLL_ANIMATE_MIN_MS) {
@@ -724,8 +727,8 @@ function renderJamo(jamo: JamoInfo | null, role: "L" | "V" | "T", curIdx: number
     <button
       type="button"
       class={
-        "text-center px-1 py-1 cursor-pointer bg-transparent border-0 " +
-        (locked ? "text-red-500" : "hover:opacity-80")
+        "w-full h-full text-center px-1 py-2 cursor-pointer bg-transparent border-0 rounded-md " +
+        (locked ? "text-red-500" : "hover:bg-black/5 dark:hover:bg-white/10")
       }
       title={tipWithAction}
       aria-pressed={locked}
@@ -855,6 +858,17 @@ function Toolbar() {
   );
 }
 
+// Auto-scroll redraws the root on every tick (up to 20×/sec), so a normal
+// `click` — which requires pointerdown AND pointerup AND no intervening DOM
+// churn — sometimes gets dropped. Fire on pointerdown instead for a HUD that
+// feels responsive no matter the cadence.
+const hudAction = (fn: () => void) => (e: PointerEvent) => {
+  if ((e.currentTarget as HTMLButtonElement).disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  fn();
+};
+
 function PlaybackHud() {
   if (!isAutoScrolling()) return null;
   const ms = AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx];
@@ -863,7 +877,8 @@ function PlaybackHud() {
   const pillBtn =
     "kongli-pill w-7 h-7 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
     "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-70 hover:opacity-100 " +
-    "text-[0.85rem] leading-none select-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
+    "text-[0.85rem] leading-none select-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed " +
+    "touch-manipulation";
   return (
     <div
       class="flex items-center gap-1.5 font-mono text-xs flex-wrap justify-center max-w-[calc(100vw-1rem)]"
@@ -875,7 +890,7 @@ function PlaybackHud() {
         class={pillBtn}
         aria-label="Pause auto-scroll"
         title="Pause (a)"
-        onclick={toggleAutoScroll}
+        onpointerdown={hudAction(toggleAutoScroll)}
       >
         ⏸
       </button>
@@ -885,7 +900,7 @@ function PlaybackHud() {
         aria-label="Slower"
         title="Slower (−)"
         disabled={!canSlower}
-        onclick={() => changeAutoScrollSpeed(-1)}
+        onpointerdown={hudAction(() => changeAutoScrollSpeed(-1))}
       >
         −
       </button>
@@ -898,7 +913,7 @@ function PlaybackHud() {
         aria-label="Faster"
         title="Faster (+)"
         disabled={!canFaster}
-        onclick={() => changeAutoScrollSpeed(1)}
+        onpointerdown={hudAction(() => changeAutoScrollSpeed(1))}
       >
         +
       </button>
@@ -908,7 +923,7 @@ function PlaybackHud() {
         aria-label={autoScrollMuted ? "Unmute tick sound" : "Mute tick sound"}
         title={autoScrollMuted ? "Unmute (m)" : "Mute (m)"}
         aria-pressed={autoScrollMuted}
-        onclick={toggleAutoScrollMute}
+        onpointerdown={hudAction(toggleAutoScrollMute)}
       >
         {autoScrollMuted ? "🔇" : "♪"}
       </button>
@@ -1537,11 +1552,15 @@ const SyllableView: m.Component = {
             )}
           </div>
 
-          <div class="kongli-divider grid grid-cols-5 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-black/10 dark:border-white/10">
+          <div class="kongli-divider grid grid-cols-5 items-stretch justify-items-stretch w-full max-w-[40rem] mt-2 py-2 border-t border-black/10 dark:border-white/10">
             {renderJamo(jamo.leading, "L", decomposeIdx[0])}
-            <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">+</span>
+            <span class="self-center justify-self-center text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">
+              +
+            </span>
             {renderJamo(jamo.vowel, "V", decomposeIdx[1])}
-            <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">+</span>
+            <span class="self-center justify-self-center text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">
+              +
+            </span>
             {renderJamo(jamo.trailing, "T", decomposeIdx[2])}
           </div>
         </div>
