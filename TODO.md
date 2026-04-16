@@ -13,8 +13,7 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 ## Navigation & UX
 
-- **Neighbor strip** — tiny horizontal thumbnails showing "neighbors" (same
-  leading, different vowels; or same vowel, different trailing).
+- _(done)_ Neighbor strip (auto-axis from lock state)
 
 ## Visual polish
 
@@ -51,12 +50,12 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 ## Wilder ideas
 
+- _(done)_ "Animate through all 11,172" — `a` toggles, `+/−` speed, `m` mutes
+  the pentatonic tick
 - **Typing trainer** — hidden Dubeolsik keyboard layout overlay; press the keys
   that form the current syllable.
 - **Daily syllable** — `/today` deterministic per UTC day, posted to an RSS
   feed.
-- **Animate through all 11,172** mode (`Shift+A`) at a configurable speed, with
-  MIDI-style tick.
 - **Export syllable as SVG / PNG** for designers making Hangul artwork.
 - **Ink-density bar** — visualize "heavy" vs "light" syllables using the glyph's
   pixel count.

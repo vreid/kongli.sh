@@ -125,10 +125,10 @@ function reducedMotion(): boolean {
   }
 }
 
-// CSS view transitions: briefly crossfade the big glyph when the index
-// lands. We only wrap the final state mutation (not the smooth-scroll
-// tween, which animates independently), and skip entirely if reduced
-// motion is requested or the API is missing.
+// CSS view transitions: we use these only for the dedicated animation
+// mode (auto-scroll "cinematic" playback). Regular navigation is
+// deliberately instant — a crossfade on every keypress / wheel notch made
+// rapid scrolling feel laggy.
 interface ViewTransitionDocument extends Document {
   startViewTransition?: (cb: () => void) => { finished: Promise<void> };
 }
@@ -150,13 +150,11 @@ function setIndex(next: number) {
   } else {
     wrapped = Math.max(0, Math.min(n - 1, next));
   }
-  withViewTransition(() => {
-    index = wrapped;
-    writeHash();
-    scheduleHistoryPush();
-    stopAutoScroll();
-    m.redraw.sync();
-  });
+  index = wrapped;
+  writeHash();
+  scheduleHistoryPush();
+  stopAutoScroll();
+  m.redraw();
 }
 
 // Cycle direction: wrap vs clamp at the ends (persisted).
@@ -473,20 +471,126 @@ function snapToInitialEnd() {
   setIndex(lIndex * N_COUNT + N_COUNT - 1);
 }
 
-const AUTO_SCROLL_INTERVAL = 600;
+// Auto-scroll: the "cinematic" mode that flips through all 11,172
+// syllables, with a configurable cadence, a pitched per-tick click, and
+// a crossfade on the big glyph. This is the only place on the page that
+// animates the index — everything else is instant.
+const AUTO_SCROLL_SPEEDS_MS = [1200, 800, 500, 300, 180, 90] as const;
+const AUTO_SCROLL_DEFAULT_IDX = 3; // → 300ms
+const AUTO_SCROLL_SPEED_KEY = "kongli.autoScrollSpeed";
+const AUTO_SCROLL_MUTE_KEY = "kongli.autoScrollMute";
+let autoScrollSpeedIdx = AUTO_SCROLL_DEFAULT_IDX;
+let autoScrollMuted = false;
 let autoScrollTimer: ReturnType<typeof setInterval> | null = null;
+let autoAudioCtx: AudioContext | null = null;
+
+function loadAutoScrollPrefs() {
+  try {
+    const raw = localStorage.getItem(AUTO_SCROLL_SPEED_KEY);
+    if (raw !== null) {
+      const n = parseInt(raw, 10);
+      if (Number.isInteger(n) && n >= 0 && n < AUTO_SCROLL_SPEEDS_MS.length) {
+        autoScrollSpeedIdx = n;
+      }
+    }
+    autoScrollMuted = localStorage.getItem(AUTO_SCROLL_MUTE_KEY) === "1";
+  } catch {
+    // ignore
+  }
+}
+
+function persistAutoScrollPrefs() {
+  try {
+    localStorage.setItem(AUTO_SCROLL_SPEED_KEY, String(autoScrollSpeedIdx));
+    localStorage.setItem(AUTO_SCROLL_MUTE_KEY, autoScrollMuted ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+interface WebAudioWindow extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
+function getAutoCtx(): AudioContext | null {
+  if (autoScrollMuted) return null;
+  if (!autoAudioCtx) {
+    try {
+      const w = window as WebAudioWindow;
+      const Ctor = w.AudioContext || w.webkitAudioContext;
+      if (!Ctor) return null;
+      autoAudioCtx = new Ctor();
+    } catch {
+      return null;
+    }
+  }
+  if (autoAudioCtx.state === "suspended") {
+    autoAudioCtx.resume().catch(() => {});
+  }
+  return autoAudioCtx;
+}
+
+// C-major pentatonic across the 19 leading consonants → a non-grating
+// pitch ramp as you traverse the 11,172 syllables.
+const PENTATONIC_SEMITONES = [0, 2, 4, 7, 9] as const;
+
+function pitchForIndex(i: number): number {
+  const [l] = decompose(i);
+  const step = PENTATONIC_SEMITONES[l % PENTATONIC_SEMITONES.length];
+  const octave = Math.floor(l / PENTATONIC_SEMITONES.length);
+  const semitones = step + octave * 12;
+  return 220 * Math.pow(2, semitones / 12);
+}
+
+function playTick(i: number) {
+  const ctx = getAutoCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "triangle";
+  osc.frequency.value = pitchForIndex(i);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.08, now + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.18);
+}
 
 function isAutoScrolling(): boolean {
   return autoScrollTimer !== null;
 }
 
-function startAutoScroll() {
-  if (autoScrollTimer) return;
-  autoScrollTimer = setInterval(() => {
-    index = (index + 1) % SYLLABLE_COUNT;
+// View transitions overlay the viewport with a pseudo-element tree while
+// an animation is in flight. At fast cadences the crossfade barely fits
+// between ticks and the overlay starves click/touch events on the HUD.
+// Only enable the animation at speeds where it reads as a smooth fade.
+const AUTO_SCROLL_ANIMATE_MIN_MS = 400;
+
+function autoScrollTick() {
+  const n = SYLLABLE_COUNT;
+  const next = (index + 1) % n;
+  playTick(next);
+  const ms = AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx];
+  if (ms >= AUTO_SCROLL_ANIMATE_MIN_MS) {
+    withViewTransition(() => {
+      index = next;
+      writeHash();
+      m.redraw.sync();
+    });
+  } else {
+    index = next;
     writeHash();
     m.redraw();
-  }, AUTO_SCROLL_INTERVAL);
+  }
+}
+
+function startAutoScroll() {
+  if (autoScrollTimer) return;
+  autoScrollTimer = setInterval(autoScrollTick, AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx]);
+  // Kick off the first tick immediately so the HUD + sound feel alive.
+  autoScrollTick();
   m.redraw();
 }
 
@@ -501,6 +605,26 @@ function stopAutoScroll() {
 function toggleAutoScroll() {
   if (isAutoScrolling()) stopAutoScroll();
   else startAutoScroll();
+}
+
+function changeAutoScrollSpeed(delta: number) {
+  const n = AUTO_SCROLL_SPEEDS_MS.length;
+  const next = Math.max(0, Math.min(n - 1, autoScrollSpeedIdx + delta));
+  if (next === autoScrollSpeedIdx) return;
+  autoScrollSpeedIdx = next;
+  persistAutoScrollPrefs();
+  if (autoScrollTimer) {
+    clearInterval(autoScrollTimer);
+    autoScrollTimer = setInterval(autoScrollTick, AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx]);
+  }
+  m.redraw();
+}
+
+function toggleAutoScrollMute() {
+  autoScrollMuted = !autoScrollMuted;
+  persistAutoScrollPrefs();
+  showToast(autoScrollMuted ? "Tick sound: off" : "Tick sound: on");
+  m.redraw();
 }
 
 // Theme
@@ -775,6 +899,58 @@ function Toolbar() {
   );
 }
 
+function PlaybackHud() {
+  if (!isAutoScrolling()) return null;
+  const ms = AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx];
+  const canFaster = autoScrollSpeedIdx < AUTO_SCROLL_SPEEDS_MS.length - 1;
+  const canSlower = autoScrollSpeedIdx > 0;
+  const pillBtn =
+    "w-7 h-7 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
+    "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-70 hover:opacity-100 " +
+    "text-[0.85rem] leading-none select-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
+  return (
+    <div
+      class="fixed top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 font-mono text-xs"
+      role="group"
+      aria-label="Auto-scroll controls"
+    >
+      <button
+        type="button"
+        class={pillBtn}
+        aria-label="Slower"
+        title="Slower (−)"
+        disabled={!canSlower}
+        onclick={() => changeAutoScrollSpeed(-1)}
+      >
+        −
+      </button>
+      <span class="px-2 py-1 rounded-md bg-white/70 dark:bg-black/70 backdrop-blur-sm border border-black/10 dark:border-white/10 opacity-70 leading-none tabular-nums">
+        {ms}ms
+      </span>
+      <button
+        type="button"
+        class={pillBtn}
+        aria-label="Faster"
+        title="Faster (+)"
+        disabled={!canFaster}
+        onclick={() => changeAutoScrollSpeed(1)}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        class={pillBtn}
+        aria-label={autoScrollMuted ? "Unmute tick sound" : "Mute tick sound"}
+        title={autoScrollMuted ? "Unmute (m)" : "Mute (m)"}
+        aria-pressed={autoScrollMuted}
+        onclick={toggleAutoScrollMute}
+      >
+        {autoScrollMuted ? "🔇" : "♪"}
+      </button>
+    </div>
+  );
+}
+
 function HelpOverlay() {
   if (!helpOpen) return null;
   return (
@@ -814,6 +990,8 @@ function HelpOverlay() {
               ["?", "Toggle this help"],
               ["c", "Copy current syllable"],
               ["a", "Toggle auto-scroll (play/pause)"],
+              ["+ / − (while playing)", "Faster / slower auto-scroll"],
+              ["m", "Mute / unmute tick sound"],
               ["b", "Bookmark current syllable"],
               ["l", "List bookmarks"],
               ["d", "Open dictionary (Wiktionary)"],
@@ -1020,6 +1198,93 @@ function FooterLinks() {
   );
 }
 
+// Which jamo slot should the neighbor strip vary? Chosen from the current
+// lock state so the strip surfaces the still-interesting axis without
+// requiring a separate toggle:
+//   - 2 of {L,V,T} locked → vary the unlocked one
+//   - 1 locked (L or T)    → vary V (vowel is the nucleus)
+//   - 1 locked (V)          → vary L (explore onsets for this vowel)
+//   - 0 locked              → vary V
+//   - all 3 locked          → no strip (only one matching syllable)
+type NeighborAxis = "L" | "V" | "T";
+
+function pickNeighborAxis(): NeighborAxis | null {
+  const lCount = lockL !== null ? 1 : 0;
+  const vCount = lockV !== null ? 1 : 0;
+  const tCount = lockT !== null ? 1 : 0;
+  const locked = lCount + vCount + tCount;
+  if (locked === 3) return null;
+  if (locked === 2) {
+    if (!lCount) return "L";
+    if (!vCount) return "V";
+    return "T";
+  }
+  if (lCount) return "V";
+  if (vCount) return "L";
+  return "V";
+}
+
+function neighborIndex(axis: NeighborAxis, delta: number): number {
+  const [l, v, t] = decompose(index);
+  if (axis === "L") {
+    const nl = (((l + delta) % L_COUNT) + L_COUNT) % L_COUNT;
+    return compose(nl, v, t);
+  }
+  if (axis === "V") {
+    const nv = (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT;
+    return compose(l, nv, t);
+  }
+  const nt = (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT;
+  return compose(l, v, nt);
+}
+
+const NEIGHBOR_OFFSETS = [-2, -1, 0, 1, 2] as const;
+
+function NeighborStrip() {
+  const axis = pickNeighborAxis();
+  // Always reserve the vertical space so the main layout never shifts.
+  if (axis === null) {
+    return <div class="flex-shrink-0 h-9 w-full" aria-hidden="true" />;
+  }
+  const axisName = axis === "L" ? "leading" : axis === "V" ? "vowel" : "trailing";
+  return (
+    <div
+      class="flex-shrink-0 h-9 w-full flex items-center justify-center gap-4 font-sans"
+      aria-label={`Neighboring syllables varying the ${axisName} jamo`}
+    >
+      {NEIGHBOR_OFFSETS.map((d) => {
+        const i = neighborIndex(axis, d);
+        const cp = HANGUL_SYLLABLES.rangeStart + i;
+        const ch = String.fromCodePoint(cp);
+        const hex = cp.toString(16).toUpperCase();
+        const isCurrent = d === 0;
+        const base = "leading-none transition-opacity";
+        const mods = isCurrent
+          ? "text-2xl opacity-100 underline decoration-2 underline-offset-4"
+          : "text-xl opacity-40 hover:opacity-90 cursor-pointer";
+        return (
+          <span
+            class={`${base} ${mods}`}
+            aria-current={isCurrent ? "true" : undefined}
+            aria-label={`${ch} U+${hex}`}
+            title={isCurrent ? undefined : `${ch} · U+${hex}`}
+            onclick={
+              isCurrent
+                ? undefined
+                : (e: MouseEvent) => {
+                    e.stopPropagation();
+                    setIndex(i);
+                  }
+            }
+          >
+            {ch}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 const SyllableView: m.Component = {
   oncreate(vnode: any) {
     // Theme init
@@ -1029,6 +1294,7 @@ const SyllableView: m.Component = {
     loadBookmarks();
     loadWrap();
     loadLocks();
+    loadAutoScrollPrefs();
     const mqListener = () => {
       if (theme === "auto") applyTheme("auto");
     };
@@ -1185,6 +1451,25 @@ const SyllableView: m.Component = {
           e.preventDefault();
           toggleAutoScroll();
           break;
+        case "+":
+        case "=":
+          if (isAutoScrolling()) {
+            e.preventDefault();
+            changeAutoScrollSpeed(1);
+          }
+          break;
+        case "-":
+        case "_":
+          if (isAutoScrolling()) {
+            e.preventDefault();
+            changeAutoScrollSpeed(-1);
+          }
+          break;
+        case "m":
+        case "M":
+          e.preventDefault();
+          toggleAutoScrollMute();
+          break;
         case "b":
         case "B":
           e.preventDefault();
@@ -1255,6 +1540,7 @@ const SyllableView: m.Component = {
     return (
       <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 pt-14 pb-6 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
         {Toolbar()}
+        {PlaybackHud()}
 
         <div
           class="flex-1 flex items-center justify-center min-h-0 overflow-hidden w-full"
@@ -1277,6 +1563,8 @@ const SyllableView: m.Component = {
             {info.char}
           </div>
         </div>
+
+        {NeighborStrip()}
 
         <div class="flex-shrink-0 flex flex-col items-center w-full pb-[env(safe-area-inset-bottom,0.5rem)]">
           <p class="m-0 font-mono opacity-70 text-[clamp(0.9rem,3.5vw,1.4rem)]">
