@@ -14,11 +14,12 @@ client-side.
 - **Frontend**: Mithril.js (TSX via `tsconfig.json` `jsxFactory: "m"`)
 - **Styling**: UnoCSS (preset-wind3) — utility classes in JSX, zero hand-written
   CSS. `@unocss/reset/tailwind.css` for normalization.
-- **Font**: self-hosted **Nanum Gothic Coding** (SIL OFL) at
-  `public/fonts/NanumGothicCoding-Regular.woff2` (~655 KB). Korean monospace so
-  every syllable fills an identical cell. Declared in `public/fonts.css`,
-  preloaded from `index.html`, wired as the default `font-sans` family in
-  `uno.config.ts`, and precached by the SW.
+- **Font**: relies on the OS's Korean system font (Apple SD Gothic Neo, Malgun
+  Gothic, Noto Sans CJK KR, …) via a system font stack declared in
+  `uno.config.ts` and used by the `measureText` pipeline. We previously
+  self-hosted Nanum Gothic Coding but dropped it: it only covers the common
+  ~2,350 KS X 1001 syllables and rendered `.notdef` tofu for rare ones (e.g. 갮,
+  늲). System Korean fonts cover all 11,172.
 - **Optical centering**: the big centerpiece character is translated per-glyph
   using Canvas `measureText` ink-bounding-box metrics so the _visual_ centroid
   (not just the em-box) lands at the same screen position for every syllable.
@@ -53,12 +54,9 @@ kongli.sh/
 │   ├── gen-og.ts            # renders 1200×630 public/og.png via @napi-rs/canvas
 │   └── gen-examples.ts      # rebuilds src/data/examples.json from hermitdave ko_50k.txt
 ├── public/
-│   ├── index.html           # mount point, links /fonts.css + /index.css + /uno.css + /index.js
+│   ├── index.html           # mount point, links /index.css + /uno.css + /index.js
 │   ├── favicon.svg
 │   ├── manifest.webmanifest
-│   ├── fonts.css            # @font-face for Nanum Gothic Coding
-│   ├── fonts/
-│   │   └── NanumGothicCoding-Regular.woff2
 │   ├── og.png               # committed OG image (regenerate with `bun run og`)
 │   ├── robots.txt
 │   ├── sw.js                # service worker (precache + cache-first)
@@ -71,6 +69,7 @@ kongli.sh/
 │   └── data/
 │       ├── unicode.ts       # syllable → jamo + romanization + encodings
 │       ├── unicode.test.ts  # bun:test
+│       ├── etymology.ts     # compatibility-jamo → origin note (for tooltips)
 │       └── examples.json    # syllable index → top ~3 Korean example words
 └── dist/                    # build output (index.js, index.css, uno.css, index.html)
 ```
@@ -95,11 +94,20 @@ kongli.sh/
   - `c` — copy current syllable to clipboard
   - `a` — toggle auto-advance (play / pause, ~600 ms per step)
   - `b` — bookmark / unbookmark current syllable
-  - `l` — list bookmarks (click to jump)
+  - `l` — list bookmarks (click to jump, with smooth animation)
+  - `d` — open the current syllable on Wiktionary
+  - `w` — toggle wrap vs clamp at either end of the block (persisted in
+    `kongli.wrap`)
   - `t` — cycle theme (auto / light / dark)
   - `Esc` — close any open overlay
 - **Click-to-copy**: clicking the big glyph copies it to the clipboard and shows
   a transient toast.
+- **Position indicator**: a small `current / 11,172` counter at the bottom of
+  the viewport.
+- **Smooth scroll**: large jumps (from the go-to input or bookmarks) animate
+  over ~0.4 s using ease-out cubic. Fine navigation stays instant.
+- **History**: each landed syllable gets a real `history.pushState` entry (after
+  motion settles), so browser back/forward walk visited syllables.
 - **Theme**: `auto` follows `prefers-color-scheme`; explicit overrides are
   persisted in `localStorage` under `kongli.theme`. The root element gets
   `.dark` when dark mode is active; UnoCSS is configured with
@@ -107,7 +115,8 @@ kongli.sh/
 - **Auto-scroll**: opt-in only. Press `a` or click the ▶ button to start
   advancing 1 char per `600 ms`; any navigation input (wheel, touch, arrow keys,
   go-to, bookmarks overlay) pauses it.
-- **Wrap-around**: index wraps modulo 11,172 in both directions.
+- **Wrap-around**: by default the index wraps modulo 11,172 in both directions.
+  Press `w` to clamp at either end instead (persisted in `kongli.wrap`).
 
 ## URL hash / deep-linking
 
@@ -132,9 +141,13 @@ Three vertical zones in a full-viewport flex column:
 2. **Center**: the syllable, sized `min(35vw, 45vh, 20rem)` so it always fits.
 3. **Bottom**: code point + Revised-Romanization (`U+AC00 · ga`), UTF-8 / UTF-16
    / UTF-32 bytes, up to three common example words (from
-   `src/data/examples.json`), and a 7-column grid showing
-   `L + V [+ T] = syllable` with compatibility jamo and role labels (초성 / 중성
-   / 종성).
+   `src/data/examples.json`), and a 7-column grid showing `L + V + T = syllable`
+   with compatibility jamo and role labels (초성 / 중성 / 종성). **Click any of
+   the L/V/T cells to lock that slot** — navigation then only visits syllables
+   matching the locked jamo(s). Locked cells get a ring outline and are
+   persisted in `kongli-locks`. A 🔓 toolbar button appears when any lock is
+   active; click to clear all. The trailing slot is always visible, so "lock
+   no-trailing (∅)" works the same way.
 
 `document.title` is updated to `"<char> — kongli.sh"` on each step.
 

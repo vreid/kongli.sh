@@ -25,11 +25,11 @@
   "scripts": {
     "dev": "bun run dev.ts",
     "build": "bun run build.ts",
-    "test": "bun test",
+    "test": "bun test src",
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "bun run format:check && bun run lint && bun test",
+    "check": "bun run format:check && bun run lint && bun run test",
     "og": "bun run scripts/gen-og.ts",
     "upgrade": "bun upgrade && bunx actions-up -y",
     "prepare": "simple-git-hooks"

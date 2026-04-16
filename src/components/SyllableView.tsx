@@ -14,6 +14,7 @@ import {
   type JamoInfo,
 } from "../data/unicode";
 import examplesData from "../data/examples.json";
+import { ETYMOLOGY } from "../data/etymology";
 
 const examples = examplesData as Record<string, string[]>;
 
@@ -62,7 +63,7 @@ index = readHash();
 const glyphOffsetCache = new Map<string, { dx: number; dy: number }>();
 const MEASURE_PX = 1000;
 const BIG_GLYPH_FONT =
-  '"Nanum Gothic Coding", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  'ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", "Segoe UI", Roboto, sans-serif';
 let measureCanvas: HTMLCanvasElement | null = null;
 let fontsReady = false;
 
@@ -70,6 +71,8 @@ function getMeasureCtx(): CanvasRenderingContext2D | null {
   if (!measureCanvas) measureCanvas = document.createElement("canvas");
   return measureCanvas.getContext("2d");
 }
+
+const clampOffset = (v: number) => Math.max(-0.5, Math.min(0.5, v));
 
 function computeGlyphOffset(char: string): { dx: number; dy: number } {
   const cached = glyphOffsetCache.get(char);
@@ -90,9 +93,15 @@ function computeGlyphOffset(char: string): { dx: number; dy: number } {
   const divCxPx = tm.width / 2;
   const divCyPx = MEASURE_PX / 2;
 
+  // Canvas metrics can occasionally return extreme values (e.g. when the
+  // requested glyph falls back to a substitute font whose bounding box
+  // spans the full em-box). Without a clamp a bad measurement translates
+  // the big glyph far off-screen and its stroke edges clip as rectangles.
+  const rawDx = (divCxPx - inkCxPx) / MEASURE_PX;
+  const rawDy = (divCyPx - inkCyPx) / MEASURE_PX;
   const result = {
-    dx: (divCxPx - inkCxPx) / MEASURE_PX,
-    dy: (divCyPx - inkCyPx) / MEASURE_PX,
+    dx: Number.isFinite(rawDx) ? clampOffset(rawDx) : 0,
+    dy: Number.isFinite(rawDy) ? clampOffset(rawDy) : 0,
   };
   if (fontsReady) glyphOffsetCache.set(char, result);
   return result;
@@ -106,11 +115,209 @@ function getStep(): number {
 }
 
 function setIndex(next: number) {
-  index = ((next % SYLLABLE_COUNT) + SYLLABLE_COUNT) % SYLLABLE_COUNT;
+  const n = SYLLABLE_COUNT;
+  let wrapped: number;
+  if (cycleWrap) {
+    wrapped = ((next % n) + n) % n;
+  } else {
+    wrapped = Math.max(0, Math.min(n - 1, next));
+  }
+  index = wrapped;
   writeHash();
+  scheduleHistoryPush();
   stopAutoScroll();
   m.redraw();
 }
+
+// Cycle direction: wrap vs clamp at the ends (persisted).
+const WRAP_KEY = "kongli.wrap";
+let cycleWrap = true;
+
+function loadWrap() {
+  try {
+    const v = localStorage.getItem(WRAP_KEY);
+    if (v === "clamp") cycleWrap = false;
+    else cycleWrap = true;
+  } catch {
+    cycleWrap = true;
+  }
+}
+
+function toggleWrap() {
+  cycleWrap = !cycleWrap;
+  try {
+    localStorage.setItem(WRAP_KEY, cycleWrap ? "wrap" : "clamp");
+  } catch {
+    // ignore
+  }
+  showToast(cycleWrap ? "Wrap at ends" : "Clamp at ends");
+  m.redraw();
+}
+
+// Push a real history entry once the user stops moving for a short time, so
+// the browser back/forward buttons step through landed syllables rather than
+// every intermediate scroll position.
+let historyPushTimer: ReturnType<typeof setTimeout> | null = null;
+let lastPushedIndex = -1;
+const HISTORY_SETTLE_MS = 450;
+
+function scheduleHistoryPush() {
+  if (historyPushTimer) clearTimeout(historyPushTimer);
+  historyPushTimer = setTimeout(() => {
+    historyPushTimer = null;
+    if (index !== lastPushedIndex) {
+      const cp = HANGUL_SYLLABLES.rangeStart + index;
+      try {
+        history.pushState(null, "", "#" + String.fromCodePoint(cp));
+        lastPushedIndex = index;
+      } catch {
+        // ignore
+      }
+    }
+  }, HISTORY_SETTLE_MS);
+}
+
+// Smooth-scroll animation for big jumps (goto, bookmark click, grid click).
+let smoothAnim: ReturnType<typeof setInterval> | null = null;
+function stopSmooth() {
+  if (smoothAnim) {
+    clearInterval(smoothAnim);
+    smoothAnim = null;
+  }
+}
+
+function setIndexSmooth(target: number) {
+  stopSmooth();
+  const start = index;
+  const n = SYLLABLE_COUNT;
+  // shortest direction (wrap-aware)
+  let delta = target - start;
+  if (cycleWrap) {
+    if (delta > n / 2) delta -= n;
+    else if (delta < -n / 2) delta += n;
+  }
+  const distance = Math.abs(delta);
+  if (distance < 50) {
+    setIndex(target);
+    return;
+  }
+  const steps = 18;
+  const dir = delta > 0 ? 1 : -1;
+  let frame = 0;
+  smoothAnim = setInterval(() => {
+    frame++;
+    // easeOutCubic
+    const t = frame / steps;
+    const eased = 1 - Math.pow(1 - t, 3);
+    const nextAbs = start + dir * Math.round(distance * eased);
+    index = ((nextAbs % n) + n) % n;
+    writeHash();
+    m.redraw();
+    if (frame >= steps) {
+      stopSmooth();
+      index = ((target % n) + n) % n;
+      writeHash();
+      scheduleHistoryPush();
+      m.redraw();
+    }
+  }, 20);
+}
+
+// Jamo locks: constrain navigation to syllables whose locked slot equals
+// the chosen jamo index. `null` means unlocked. For trailing, 0 means the
+// "no trailing" slot.
+let lockL: number | null = null;
+let lockV: number | null = null;
+let lockT: number | null = null;
+
+const LOCK_KEY = "kongli-locks";
+
+function loadLocks() {
+  try {
+    const raw = localStorage.getItem(LOCK_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (typeof p.l === "number") lockL = p.l;
+    if (typeof p.v === "number") lockV = p.v;
+    if (typeof p.t === "number") lockT = p.t;
+  } catch {
+    // ignore
+  }
+}
+
+function persistLocks() {
+  try {
+    localStorage.setItem(LOCK_KEY, JSON.stringify({ l: lockL, v: lockV, t: lockT }));
+  } catch {
+    // ignore
+  }
+}
+
+function setLockL(v: number | null) {
+  lockL = v;
+  persistLocks();
+  m.redraw();
+}
+function setLockV(v: number | null) {
+  lockV = v;
+  persistLocks();
+  m.redraw();
+}
+function setLockT(v: number | null) {
+  lockT = v;
+  persistLocks();
+  m.redraw();
+}
+
+function anyLock(): boolean {
+  return lockL !== null || lockV !== null || lockT !== null;
+}
+
+// Total number of syllables still reachable given the current locks, and
+// the 0-based rank of the current syllable among them. Used by the bottom
+// counter so "X / Y" reflects the filtered universe, not the full 11,172.
+function lockedTotal(): number {
+  let total = 1;
+  if (lockL === null) total *= L_COUNT;
+  if (lockV === null) total *= V_COUNT;
+  if (lockT === null) total *= T_COUNT;
+  return total;
+}
+
+function lockedPosition(): number {
+  const [l, v, t] = decompose(index);
+  let pos = 0;
+  if (lockL === null) pos = pos * L_COUNT + l;
+  if (lockV === null) pos = pos * V_COUNT + v;
+  if (lockT === null) pos = pos * T_COUNT + t;
+  return pos;
+}
+
+function matchesLock(idx: number): boolean {
+  const [l, v, t] = decompose(idx);
+  if (lockL !== null && l !== lockL) return false;
+  if (lockV !== null && v !== lockV) return false;
+  if (lockT !== null && t !== lockT) return false;
+  return true;
+}
+
+function stepWithLocks(delta: number): number {
+  if (!anyLock()) return index + delta;
+  const dir = delta > 0 ? 1 : -1;
+  let remaining = Math.abs(delta);
+  let cur = index;
+  const n = SYLLABLE_COUNT;
+  let safety = n;
+  while (remaining > 0 && safety-- > 0) {
+    cur = (((cur + dir) % n) + n) % n;
+    if (matchesLock(cur)) remaining--;
+  }
+  return cur;
+}
+
+// Hover highlight was explored but dropped: splitting the composed syllable
+// into separate jamo glyphs on hover looked broken (Hangul isn't linear) and
+// the colored ring on the jamo cells below added little.
 
 function advance(delta: number) {
   const now = Date.now();
@@ -120,13 +327,13 @@ function advance(delta: number) {
     scrollStreak = 0;
   }
   lastScrollTime = now;
-  setIndex(index + getStep() * delta);
+  setIndex(stepWithLocks(getStep() * delta));
 }
 
 function jumpBy(delta: number) {
   scrollStreak = 0;
   lastScrollTime = 0;
-  setIndex(index + delta);
+  setIndex(stepWithLocks(delta));
 }
 
 // Composable navigation: cycle a single jamo component (leading / vowel /
@@ -142,17 +349,23 @@ function compose(l: number, v: number, t: number): number {
 
 function cycleLeading(delta: number) {
   const [l, v, t] = decompose(index);
-  setIndex(compose((((l + delta) % L_COUNT) + L_COUNT) % L_COUNT, v, t));
+  const nl = (((l + delta) % L_COUNT) + L_COUNT) % L_COUNT;
+  if (lockL !== null) lockL = nl;
+  setIndex(compose(nl, v, t));
 }
 
 function cycleVowel(delta: number) {
   const [l, v, t] = decompose(index);
-  setIndex(compose(l, (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT, t));
+  const nv = (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT;
+  if (lockV !== null) lockV = nv;
+  setIndex(compose(l, nv, t));
 }
 
 function cycleTrailing(delta: number) {
   const [l, v, t] = decompose(index);
-  setIndex(compose(l, v, (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT));
+  const nt = (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT;
+  if (lockT !== null) lockT = nt;
+  setIndex(compose(l, v, nt));
 }
 
 // Text-to-speech was tried but disabled: browser voice availability for
@@ -205,6 +418,17 @@ function openList() {
 function closeList() {
   listOpen = false;
   m.redraw();
+}
+
+function anyOverlayOpen(): boolean {
+  return helpOpen || gotoOpen || listOpen;
+}
+
+function openDictionary() {
+  const cp = HANGUL_SYLLABLES.rangeStart + index;
+  const ch = String.fromCodePoint(cp);
+  const url = "https://en.wiktionary.org/wiki/" + encodeURIComponent(ch);
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function snapToInitialStart() {
@@ -380,27 +604,54 @@ function parseGoto(raw: string): number | null {
 function submitGoto() {
   const target = parseGoto(gotoValue);
   if (target === null) {
-    gotoError = "Enter a syllable (가), hex (AC00), or position (1–11172).";
+    gotoError = "Enter a syllable (가), hex (AC00), position (1–11172), or romanization (han).";
     m.redraw();
     return;
   }
-  setIndex(target);
   closeGoto();
+  setIndexSmooth(target);
 }
 
-function renderJamo(jamo: JamoInfo) {
+function renderJamo(jamo: JamoInfo | null, role: "L" | "V" | "T", curIdx: number) {
+  const isNone = jamo === null;
+  const locked =
+    role === "L" ? lockL === curIdx : role === "V" ? lockV === curIdx : lockT === curIdx;
+  const label = isNone ? "종성 없음 (No final)" : jamo.roleName;
+  const tip =
+    !isNone && ETYMOLOGY[jamo.compatChar] ? `${label} · ${ETYMOLOGY[jamo.compatChar]}` : label;
+  const tipWithAction = tip + (locked ? " · click to unlock" : " · click to lock");
+  const toggle = () => {
+    if (role === "L") setLockL(locked ? null : curIdx);
+    else if (role === "V") setLockV(locked ? null : curIdx);
+    else setLockT(locked ? null : curIdx);
+  };
   return (
-    <div class="text-center">
-      <div class="text-[clamp(1.8rem,8vw,3.5rem)] leading-[1.1]">{jamo.compatChar}</div>
-      <small class="opacity-60 text-[clamp(0.55rem,2.5vw,0.75rem)]">{jamo.roleName}</small>
+    <button
+      type="button"
+      class={
+        "text-center px-1 py-1 cursor-pointer bg-transparent border-0 " +
+        (locked ? "text-red-500" : "hover:opacity-80")
+      }
+      title={tipWithAction}
+      aria-pressed={locked}
+      onclick={toggle}
+    >
+      <div class="text-[clamp(1.8rem,8vw,3.5rem)] leading-[1.1]">
+        {isNone ? <span class="opacity-30">∅</span> : jamo.compatChar}
+      </div>
+      <small class="opacity-60 text-[clamp(0.55rem,2.5vw,0.75rem)]">
+        {isNone ? "종성 없음" : jamo.roleName}
+      </small>
       <br />
-      <small class="opacity-50 font-mono text-[clamp(0.5rem,2vw,0.7rem)]">{jamo.compatHex}</small>
-    </div>
+      <small class="opacity-50 font-mono text-[clamp(0.5rem,2vw,0.7rem)]">
+        {isNone ? "—" : jamo.compatHex}
+      </small>
+    </button>
   );
 }
 
 const iconBtn =
-  "w-9 h-9 flex items-center justify-center rounded-md border border-current/15 " +
+  "w-9 h-9 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
   "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-60 hover:opacity-100 " +
   "transition-opacity text-[1rem] leading-none select-none cursor-pointer";
 
@@ -413,8 +664,9 @@ function themeIcon(): string {
 function Toolbar() {
   const bookmarked = bookmarks.has(index);
   const playing = isAutoScrolling();
+  const locksOn = anyLock();
   return (
-    <div class="fixed top-2 right-2 flex gap-1.5 z-20">
+    <div class="fixed top-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-20 flex-wrap justify-center max-w-[calc(100vw-1rem)]">
       <button
         type="button"
         class={iconBtn}
@@ -425,6 +677,21 @@ function Toolbar() {
       >
         {playing ? "⏸" : "▶"}
       </button>
+      {locksOn && (
+        <button
+          type="button"
+          class={iconBtn + " ring-1 ring-black/40 dark:ring-white/40"}
+          aria-label="Clear jamo locks"
+          title="Clear all locks"
+          onclick={() => {
+            setLockL(null);
+            setLockV(null);
+            setLockT(null);
+          }}
+        >
+          🔓
+        </button>
+      )}
       <button
         type="button"
         class={iconBtn}
@@ -443,6 +710,15 @@ function Toolbar() {
         onclick={openList}
       >
         ≡
+      </button>
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label="Open Wiktionary"
+        title="Dictionary (d)"
+        onclick={openDictionary}
+      >
+        ⓘ
       </button>
       <button
         type="button"
@@ -480,7 +756,7 @@ function HelpOverlay() {
       aria-label="Keyboard shortcuts"
     >
       <div
-        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10"
+        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
         onclick={(e: MouseEvent) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between mb-3">
@@ -510,10 +786,12 @@ function HelpOverlay() {
               ["a", "Toggle auto-scroll (play/pause)"],
               ["b", "Bookmark current syllable"],
               ["l", "List bookmarks"],
+              ["d", "Open dictionary (Wiktionary)"],
+              ["w", "Toggle wrap / clamp at ends"],
               ["t", "Cycle theme"],
               ["Esc", "Close overlay"],
             ].map(([k, v]) => (
-              <tr class="border-t border-current/10">
+              <tr class="border-t border-black/10 dark:border-white/10">
                 <td class="py-1.5 pr-3 font-mono whitespace-nowrap">{k}</td>
                 <td class="py-1.5 opacity-80">{v}</td>
               </tr>
@@ -545,7 +823,7 @@ const GotoOverlay: m.Component = {
         aria-label="Go to syllable"
       >
         <div
-          class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10"
+          class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
           <label class="block text-sm mb-2 opacity-80" for="goto-input">
@@ -554,7 +832,7 @@ const GotoOverlay: m.Component = {
           <input
             id="goto-input"
             type="text"
-            class="w-full px-3 py-2 rounded border border-current/20 bg-transparent font-mono outline-none focus:border-current/60"
+            class="w-full px-3 py-2 rounded border border-black/20 dark:border-white/20 bg-transparent font-mono outline-none focus:border-black/60 dark:focus:border-white/60"
             value={gotoValue}
             autocomplete="off"
             spellcheck={false}
@@ -576,7 +854,7 @@ const GotoOverlay: m.Component = {
           <div class="mt-3 flex justify-end gap-2">
             <button
               type="button"
-              class="px-3 py-1.5 rounded border border-current/20 opacity-70 hover:opacity-100 cursor-pointer"
+              class="px-3 py-1.5 rounded border border-black/20 dark:border-white/20 opacity-70 hover:opacity-100 cursor-pointer"
               onclick={closeGoto}
             >
               Cancel
@@ -607,7 +885,7 @@ function BookmarksOverlay() {
       aria-label="Bookmarks"
     >
       <div
-        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10 max-h-[75vh] overflow-auto"
+        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10 max-h-[75vh] overflow-auto"
         onclick={(e: MouseEvent) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between mb-3">
@@ -632,10 +910,10 @@ function BookmarksOverlay() {
               return (
                 <button
                   type="button"
-                  class="flex flex-col items-center gap-0.5 py-2 rounded border border-current/10 hover:bg-current/5 cursor-pointer"
+                  class="flex flex-col items-center gap-0.5 py-2 rounded border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
                   onclick={() => {
-                    setIndex(i);
                     closeList();
+                    setIndexSmooth(i);
                   }}
                   title={`${c} · ${romanize(HANGUL_SYLLABLES.rangeStart + i)}`}
                 >
@@ -666,6 +944,20 @@ function Toast() {
   );
 }
 
+function PositionCounter() {
+  const total = lockedTotal();
+  const pos = lockedPosition() + 1;
+  return (
+    <div
+      class="fixed left-1/2 -translate-x-1/2 bottom-2 z-10 font-mono text-[0.65rem] opacity-40 pointer-events-none leading-none"
+      aria-hidden="true"
+    >
+      {pos.toLocaleString()} / {total.toLocaleString()}
+      {anyLock() && <span class="opacity-70"> · locked</span>}
+    </div>
+  );
+}
+
 const SyllableView: m.Component = {
   oncreate(vnode: any) {
     // Theme init
@@ -673,6 +965,8 @@ const SyllableView: m.Component = {
     mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     applyTheme(theme);
     loadBookmarks();
+    loadWrap();
+    loadLocks();
     const mqListener = () => {
       if (theme === "auto") applyTheme("auto");
     };
@@ -680,7 +974,7 @@ const SyllableView: m.Component = {
     vnode._mq = mqListener;
 
     const wheel = (e: WheelEvent) => {
-      if (helpOpen || gotoOpen || listOpen) return;
+      if (anyOverlayOpen()) return;
       e.preventDefault();
       advance(e.deltaY > 0 ? 1 : -1);
     };
@@ -691,12 +985,12 @@ const SyllableView: m.Component = {
     let touchAccum = 0;
     const TOUCH_THRESHOLD = 30;
     const touchStart = (e: TouchEvent) => {
-      if (helpOpen || gotoOpen || listOpen) return;
+      if (anyOverlayOpen()) return;
       touchY = e.touches[0].clientY;
       touchAccum = 0;
     };
     const touchMove = (e: TouchEvent) => {
-      if (helpOpen || gotoOpen || listOpen) return;
+      if (anyOverlayOpen()) return;
       e.preventDefault();
       const y = e.touches[0].clientY;
       touchAccum += touchY - y;
@@ -734,7 +1028,7 @@ const SyllableView: m.Component = {
         }
       }
 
-      if (helpOpen || gotoOpen || listOpen) return;
+      if (anyOverlayOpen()) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       // Composable explorer: Shift + ↑/↓/←/→ cycles a single jamo
@@ -839,6 +1133,16 @@ const SyllableView: m.Component = {
           e.preventDefault();
           openList();
           break;
+        case "d":
+        case "D":
+          e.preventDefault();
+          openDictionary();
+          break;
+        case "w":
+        case "W":
+          e.preventDefault();
+          toggleWrap();
+          break;
       }
     };
     document.addEventListener("keydown", key);
@@ -870,6 +1174,8 @@ const SyllableView: m.Component = {
     window.removeEventListener("hashchange", vnode._hash);
     if (mediaQuery && vnode._mq) mediaQuery.removeEventListener("change", vnode._mq);
     if (autoScrollTimer) clearInterval(autoScrollTimer);
+    if (smoothAnim) clearInterval(smoothAnim);
+    if (historyPushTimer) clearTimeout(historyPushTimer);
     if (hashTimer) clearTimeout(hashTimer);
     if (toastTimer) clearTimeout(toastTimer);
   },
@@ -878,18 +1184,15 @@ const SyllableView: m.Component = {
     const cp = HANGUL_SYLLABLES.rangeStart + index;
     const info = getCharInfo(cp);
     const jamo = decomposeSyllable(cp);
+    const decomposeIdx = decompose(index);
     const enc = getEncodings(cp);
     const roman = romanize(cp);
     const words = examples[String(index)] ?? [];
     document.title = `${info.char} — kongli.sh`;
 
     return (
-      <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
+      <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 pt-14 pb-6 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
         {Toolbar()}
-
-        <small class="opacity-40 font-mono py-2 text-[clamp(0.7rem,2.5vw,0.9rem)] flex-shrink-0">
-          {index + 1}/{SYLLABLE_COUNT.toLocaleString()}
-        </small>
 
         <div
           class="flex-1 flex items-center justify-center min-h-0 overflow-hidden w-full"
@@ -899,7 +1202,10 @@ const SyllableView: m.Component = {
         >
           <div
             class="text-[min(35vw,45vh,20rem)] leading-none cursor-pointer will-change-transform"
-            style={`transform: translate(${computeGlyphOffset(info.char).dx}em, ${computeGlyphOffset(info.char).dy}em)`}
+            style={(() => {
+              const o = computeGlyphOffset(info.char);
+              return `transform: translate(${o.dx}em, ${o.dy}em)`;
+            })()}
             title="Click to copy"
             onclick={(e: MouseEvent) => {
               e.stopPropagation();
@@ -937,29 +1243,16 @@ const SyllableView: m.Component = {
             )}
           </div>
 
-          <div class="grid grid-cols-7 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-current/10">
-            {renderJamo(jamo.leading)}
+          <div class="grid grid-cols-5 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-black/10 dark:border-white/10">
+            {renderJamo(jamo.leading, "L", decomposeIdx[0])}
             <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">+</span>
-            {renderJamo(jamo.vowel)}
-            <span
-              class={
-                "text-[clamp(0.9rem,3vw,1.5rem)] opacity-30 " +
-                (jamo.trailing ? "visible" : "invisible")
-              }
-            >
-              +
-            </span>
-            <div class={jamo.trailing ? "text-center" : "text-center invisible"}>
-              {renderJamo(jamo.trailing || jamo.vowel)}
-            </div>
-            <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">=</span>
-            <div class="text-center">
-              <div class="text-[clamp(1.8rem,8vw,3.5rem)] leading-[1.1]">{info.char}</div>
-              <small class="opacity-60 text-[clamp(0.55rem,2.5vw,0.75rem)]">Syllable</small>
-            </div>
+            {renderJamo(jamo.vowel, "V", decomposeIdx[1])}
+            <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">+</span>
+            {renderJamo(jamo.trailing, "T", decomposeIdx[2])}
           </div>
         </div>
 
+        {PositionCounter()}
         {HelpOverlay()}
         {m(GotoOverlay)}
         {BookmarksOverlay()}

@@ -70,9 +70,17 @@ format/lint/test/build and deploys `dist/` to GitHub Pages. The custom domain
   - `a` — toggle **auto-advance** (play/pause, ~600 ms per step)
   - `b` — **bookmark** / unbookmark current syllable (persisted in localStorage)
   - `l` — **list** bookmarks; click to jump
+  - `d` — open current syllable on **Wiktionary**
+  - `w` — toggle **wrap** vs clamp at either end of the block
   - `t` — cycle **theme** (auto / light / dark, remembered in localStorage)
   - `Esc` — close overlay
 - **Auto-scroll**: opt-in — press `a` or the ▶ toolbar button; any input pauses.
+- **Lock a jamo**: click any of the three jamo cells (initial / vowel / final)
+  under the big syllable to lock that slot — navigation will only visit
+  syllables matching the locked jamo(s), and the `X / Y` counter narrows to the
+  filtered universe. Click again to unlock; 🔓 button clears all.
+- **History**: every landed syllable gets a real `history.pushState` entry, so
+  browser back/forward steps between visited syllables.
 - **Hash**: URL hash = current syllable (`#가`), hex (`#AC00`), position
   (`#pos/1234`), or romanization (`#han`), throttled to 120 ms
 

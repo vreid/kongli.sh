@@ -8,10 +8,8 @@ const ASSETS = [
   "/index.js",
   "/index.css",
   "/uno.css",
-  "/fonts.css",
   "/favicon.svg",
   "/manifest.webmanifest",
-  "/fonts/NanumGothicCoding-Regular.woff2",
 ];
 
 self.addEventListener("install", (event) => {
