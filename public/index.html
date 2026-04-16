@@ -3,17 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+    <title>kongli.sh — Korean Unicode Explorer</title>
     <meta
       name="description"
       content="Scroll through all 11,172 Hangul syllables with live jamo decomposition and encodings."
     />
-    <title>kongli.sh — Korean Unicode Explorer</title>
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kongli.sh" />
+    <meta property="og:title" content="kongli.sh — Korean Unicode Explorer" />
+    <meta
+      property="og:description"
+      content="Scroll through all 11,172 Hangul syllables with live jamo decomposition and encodings."
+    />
+    <meta property="og:image" content="https://kongli.sh/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="kongli.sh — Korean Unicode Explorer" />
+    <meta
+      name="twitter:description"
+      content="Scroll through all 11,172 Hangul syllables with live jamo decomposition and encodings."
+    />
+    <meta name="twitter:image" content="https://kongli.sh/og.png" />
+
     <link rel="stylesheet" href="/index.css" />
     <link rel="stylesheet" href="/uno.css" />
   </head>
-  <body class="h-full m-0 overflow-hidden font-sans">
+  <body
+    class="h-full m-0 overflow-hidden font-sans bg-white text-black dark:bg-black dark:text-white"
+  >
     <div id="app" class="h-full"></div>
     <noscript>
       <p class="p-4 text-center">

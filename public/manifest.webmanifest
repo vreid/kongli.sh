@@ -1,0 +1,19 @@
+{
+  "name": "kongli.sh",
+  "short_name": "kongli",
+  "description": "Scroll through all 11,172 Hangul syllables with live jamo decomposition and encodings.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

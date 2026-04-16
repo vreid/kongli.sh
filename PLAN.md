@@ -14,8 +14,10 @@ client-side.
 - **Frontend**: Mithril.js (TSX via `tsconfig.json` `jsxFactory: "m"`)
 - **Styling**: UnoCSS (preset-wind3) — utility classes in JSX, zero hand-written
   CSS. `@unocss/reset/tailwind.css` for normalization.
-- **Serving**: Caddy (auto-HTTPS, gzip, SPA fallback)
-- **Deployment**: Docker (multi-stage: Bun build → Caddy serve)
+- **Serving**: GitHub Pages (static hosting) with custom domain via
+  `public/CNAME`
+- **Deployment**: `.github/workflows/deploy.yml` runs format/lint/test/build on
+  every push and PR; deploys `dist/` on pushes to `main`
 
 ## Unicode scope
 
@@ -35,11 +37,15 @@ change that.
 kongli.sh/
 ├── build.ts                 # Bun.build + unocss CLI + public/ copy
 ├── dev.ts                   # parallel bun build --watch + unocss --watch
-├── uno.config.ts            # UnoCSS presets & content globs
-├── Dockerfile               # multi-stage: bun build → caddy serve
-├── Caddyfile                # static files + SPA fallback
+├── uno.config.ts            # UnoCSS presets & content globs (dark: 'class')
+├── scripts/
+│   └── gen-og.ts            # renders 1200×630 public/og.png via @napi-rs/canvas
 ├── public/
 │   ├── index.html           # mount point, links /index.css + /uno.css + /index.js
+│   ├── favicon.svg
+│   ├── manifest.webmanifest
+│   ├── og.png               # committed OG image (regenerate with `bun run og`)
+│   ├── robots.txt
 │   └── CNAME
 ├── src/
 │   ├── index.tsx            # imports reset CSS, mounts CharView on #app
@@ -64,8 +70,19 @@ kongli.sh/
   - `←` / `→` — ±28 (next / previous vowel row, same initial)
   - `PageUp` / `PageDown` — ±588 (next / previous initial row)
   - `Home` / `End` — snap to first / last syllable of the current initial
+  - `/` or `g` — open "go to" input (syllable, hex, or 1-based position)
+  - `?` or `h` — toggle help overlay
+  - `c` — copy current syllable to clipboard
+  - `t` — cycle theme (auto / light / dark)
+  - `Esc` — close any open overlay
+- **Click-to-copy**: clicking the big glyph copies it to the clipboard and shows
+  a transient toast.
+- **Theme**: `auto` follows `prefers-color-scheme`; explicit overrides are
+  persisted in `localStorage` under `kongli.theme`. The root element gets
+  `.dark` when dark mode is active; UnoCSS is configured with
+  `presetWind3({ dark: 'class' })`.
 - **Idle auto-scroll**: after `5 s` of no input, advance 1 char per `600 ms`
-  until the next user event.
+  until the next user event. Paused while any overlay is open.
 - **Wrap-around**: index wraps modulo 11,172 in both directions.
 
 ## URL hash / deep-linking
@@ -104,14 +121,19 @@ Three vertical zones in a full-viewport flex column:
   `perf`, see `.oxlintrc.json`)
 - **Format**: `bun run format` / `bun run format:check` → Prettier (see
   `.prettierrc.json`)
+- **OG image**: `bun run og` regenerates `public/og.png` (1200×630) via
+  `@napi-rs/canvas` using the system's Korean font (committed to the repo; not
+  run in CI).
 - **Output**: `dist/index.js`, `dist/index.css` (reset), `dist/uno.css`
-  (utilities), `dist/index.html`, `dist/CNAME`
+  (utilities), `dist/index.html`, `dist/favicon.svg`,
+  `dist/manifest.webmanifest`, `dist/og.png`, `dist/robots.txt`, `dist/CNAME`
 
 ## Deployment
 
-- **Caddyfile**: serves `/srv`, `try_files {path} /index.html`, `encode gzip`.
-- **Dockerfile**: stage 1 `oven/bun` runs `bun install && bun run build`; stage
-  2 `caddy:alpine` copies `dist/` to `/srv`.
+Pushes to `main` trigger `.github/workflows/deploy.yml`, which runs
+`format:check`, `lint`, `test`, `build`, then uploads `dist/` to GitHub Pages.
+PRs run the same checks without deploying. The custom domain (`kongli.sh`) is
+configured via `public/CNAME`.
 
 ## Future ideas
 

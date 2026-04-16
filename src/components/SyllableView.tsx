@@ -116,6 +116,13 @@ function startAutoScroll() {
   }, AUTO_SCROLL_INTERVAL);
 }
 
+function stopAutoScroll() {
+  if (autoScrollTimer) {
+    clearInterval(autoScrollTimer);
+    autoScrollTimer = null;
+  }
+}
+
 function startIdleTimer() {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
@@ -124,11 +131,140 @@ function startIdleTimer() {
 }
 
 function resetIdle() {
-  if (autoScrollTimer) {
-    clearInterval(autoScrollTimer);
-    autoScrollTimer = null;
-  }
+  stopAutoScroll();
   startIdleTimer();
+}
+
+// Theme
+type Theme = "auto" | "light" | "dark";
+const THEME_KEY = "kongli.theme";
+let theme: Theme = "auto";
+let mediaQuery: MediaQueryList | null = null;
+
+function loadTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    if (v === "light" || v === "dark" || v === "auto") return v;
+  } catch {
+    // ignore
+  }
+  return "auto";
+}
+
+function applyTheme(t: Theme) {
+  const root = document.documentElement;
+  const dark = t === "dark" || (t === "auto" && !!mediaQuery?.matches);
+  root.classList.toggle("dark", dark);
+}
+
+function setTheme(t: Theme) {
+  theme = t;
+  try {
+    localStorage.setItem(THEME_KEY, t);
+  } catch {
+    // ignore
+  }
+  applyTheme(t);
+  m.redraw();
+}
+
+function cycleTheme() {
+  const next: Theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
+  setTheme(next);
+}
+
+// Overlays / toast
+let helpOpen = false;
+let gotoOpen = false;
+let gotoValue = "";
+let gotoError: string | null = null;
+let toastMessage: string | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(msg: string) {
+  toastMessage = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastMessage = null;
+    toastTimer = null;
+    m.redraw();
+  }, 1500);
+  m.redraw();
+}
+
+async function copyCurrent(char: string) {
+  try {
+    await navigator.clipboard.writeText(char);
+    showToast(`Copied ${char}`);
+  } catch {
+    showToast("Copy failed");
+  }
+}
+
+function openHelp() {
+  helpOpen = true;
+  stopAutoScroll();
+  if (idleTimer) clearTimeout(idleTimer);
+  m.redraw();
+}
+
+function closeHelp() {
+  helpOpen = false;
+  startIdleTimer();
+  m.redraw();
+}
+
+function openGoto() {
+  gotoOpen = true;
+  gotoValue = "";
+  gotoError = null;
+  stopAutoScroll();
+  if (idleTimer) clearTimeout(idleTimer);
+  m.redraw();
+}
+
+function closeGoto() {
+  gotoOpen = false;
+  gotoError = null;
+  startIdleTimer();
+  m.redraw();
+}
+
+function parseGoto(raw: string): number | null {
+  const s = raw.trim();
+  if (!s) return null;
+  // Literal syllable character
+  if (s.length <= 2) {
+    const cp = s.codePointAt(0);
+    if (cp && cp >= HANGUL_SYLLABLES.rangeStart && cp <= HANGUL_SYLLABLES.rangeEnd) {
+      return cp - HANGUL_SYLLABLES.rangeStart;
+    }
+  }
+  // Hex code point (U+AC00, 0xAC00, #AC00, AC00)
+  const hexMatch = s.match(/^(?:u\+|0x|#)?([0-9a-f]+)$/i);
+  if (hexMatch) {
+    const n = parseInt(hexMatch[1], 16);
+    if (n >= HANGUL_SYLLABLES.rangeStart && n <= HANGUL_SYLLABLES.rangeEnd) {
+      return n - HANGUL_SYLLABLES.rangeStart;
+    }
+  }
+  // 1-based position
+  if (/^\d+$/.test(s)) {
+    const pos = parseInt(s, 10);
+    if (pos >= 1 && pos <= SYLLABLE_COUNT) return pos - 1;
+  }
+  return null;
+}
+
+function submitGoto() {
+  const target = parseGoto(gotoValue);
+  if (target === null) {
+    gotoError = "Enter a syllable (가), hex (AC00), or position (1–11172).";
+    m.redraw();
+    return;
+  }
+  setIndex(target);
+  closeGoto();
 }
 
 function renderJamo(jamo: JamoInfo) {
@@ -142,9 +278,191 @@ function renderJamo(jamo: JamoInfo) {
   );
 }
 
+const iconBtn =
+  "w-9 h-9 flex items-center justify-center rounded-md border border-current/15 " +
+  "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-60 hover:opacity-100 " +
+  "transition-opacity text-[1rem] leading-none select-none cursor-pointer";
+
+function themeIcon(): string {
+  if (theme === "light") return "☀";
+  if (theme === "dark") return "☾";
+  return "◐";
+}
+
+function Toolbar() {
+  return (
+    <div class="fixed top-2 right-2 flex gap-1.5 z-20">
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label={`Theme: ${theme} (click to cycle)`}
+        title={`Theme: ${theme}`}
+        onclick={cycleTheme}
+      >
+        {themeIcon()}
+      </button>
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label="Go to syllable"
+        title="Go to (/)"
+        onclick={openGoto}
+      >
+        /
+      </button>
+      <button type="button" class={iconBtn} aria-label="Help" title="Help (?)" onclick={openHelp}>
+        ?
+      </button>
+    </div>
+  );
+}
+
+function HelpOverlay() {
+  if (!helpOpen) return null;
+  return (
+    <div
+      class="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+      onclick={closeHelp}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Keyboard shortcuts"
+    >
+      <div
+        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10"
+        onclick={(e: MouseEvent) => e.stopPropagation()}
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="m-0 text-lg font-semibold">Keyboard shortcuts</h2>
+          <button
+            type="button"
+            class="opacity-60 hover:opacity-100 text-xl leading-none cursor-pointer"
+            aria-label="Close"
+            onclick={closeHelp}
+          >
+            ×
+          </button>
+        </div>
+        <table class="w-full text-sm">
+          <tbody>
+            {[
+              ["↑ / ↓", "Previous / next syllable"],
+              ["← / →", "±28 (vowel row)"],
+              ["PgUp / PgDn", "±588 (initial row)"],
+              ["Home / End", "Start / end of current initial"],
+              ["/", "Go to syllable, hex, or position"],
+              ["?", "Toggle this help"],
+              ["c", "Copy current syllable"],
+              ["t", "Cycle theme"],
+              ["Esc", "Close overlay"],
+            ].map(([k, v]) => (
+              <tr class="border-t border-current/10">
+                <td class="py-1.5 pr-3 font-mono whitespace-nowrap">{k}</td>
+                <td class="py-1.5 opacity-80">{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p class="mt-3 text-xs opacity-60">
+          Also: click the big syllable to copy it. Scroll, swipe, or wait 5 s for auto-advance.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const GotoOverlay: m.Component = {
+  oncreate() {
+    const el = document.getElementById("goto-input") as HTMLInputElement | null;
+    if (el) el.focus();
+  },
+  view() {
+    if (!gotoOpen) return null;
+    return (
+      <div
+        class="fixed inset-0 z-30 flex items-start justify-center bg-black/60 p-4 pt-[20vh]"
+        onclick={closeGoto}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Go to syllable"
+      >
+        <div
+          class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10"
+          onclick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <label class="block text-sm mb-2 opacity-80" for="goto-input">
+            Go to: syllable (가), hex (AC00), or position (1–11172)
+          </label>
+          <input
+            id="goto-input"
+            type="text"
+            class="w-full px-3 py-2 rounded border border-current/20 bg-transparent font-mono outline-none focus:border-current/60"
+            value={gotoValue}
+            autocomplete="off"
+            spellcheck={false}
+            oninput={(e: InputEvent) => {
+              gotoValue = (e.target as HTMLInputElement).value;
+              gotoError = null;
+            }}
+            onkeydown={(e: KeyboardEvent) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitGoto();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                closeGoto();
+              }
+            }}
+          />
+          {gotoError && <p class="mt-2 text-sm text-red-500">{gotoError}</p>}
+          <div class="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded border border-current/20 opacity-70 hover:opacity-100 cursor-pointer"
+              onclick={closeGoto}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded bg-black text-white dark:bg-white dark:text-black cursor-pointer"
+              onclick={submitGoto}
+            >
+              Go
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  },
+};
+
+function Toast() {
+  if (!toastMessage) return null;
+  return (
+    <div
+      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-md bg-black text-white dark:bg-white dark:text-black text-sm shadow-lg"
+      role="status"
+      aria-live="polite"
+    >
+      {toastMessage}
+    </div>
+  );
+}
+
 const SyllableView: m.Component = {
   oncreate(vnode: any) {
+    // Theme init
+    theme = loadTheme();
+    mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    applyTheme(theme);
+    const mqListener = () => {
+      if (theme === "auto") applyTheme("auto");
+    };
+    mediaQuery.addEventListener("change", mqListener);
+    vnode._mq = mqListener;
+
     const wheel = (e: WheelEvent) => {
+      if (helpOpen || gotoOpen) return;
       e.preventDefault();
       advance(e.deltaY > 0 ? 1 : -1);
     };
@@ -155,11 +473,13 @@ const SyllableView: m.Component = {
     let touchAccum = 0;
     const TOUCH_THRESHOLD = 30;
     const touchStart = (e: TouchEvent) => {
+      if (helpOpen || gotoOpen) return;
       touchY = e.touches[0].clientY;
       touchAccum = 0;
       resetIdle();
     };
     const touchMove = (e: TouchEvent) => {
+      if (helpOpen || gotoOpen) return;
       e.preventDefault();
       const y = e.touches[0].clientY;
       touchAccum += touchY - y;
@@ -176,6 +496,25 @@ const SyllableView: m.Component = {
     vnode._touchMove = touchMove;
 
     const key = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+
+      if (e.key === "Escape") {
+        if (gotoOpen) {
+          e.preventDefault();
+          closeGoto();
+          return;
+        }
+        if (helpOpen) {
+          e.preventDefault();
+          closeHelp();
+          return;
+        }
+      }
+
+      if (helpOpen || gotoOpen) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -209,6 +548,30 @@ const SyllableView: m.Component = {
           e.preventDefault();
           snapToInitialEnd();
           break;
+        case "?":
+        case "h":
+        case "H":
+          e.preventDefault();
+          openHelp();
+          break;
+        case "/":
+        case "g":
+        case "G":
+          e.preventDefault();
+          openGoto();
+          break;
+        case "c":
+        case "C": {
+          e.preventDefault();
+          const cp = HANGUL_SYLLABLES.rangeStart + index;
+          copyCurrent(String.fromCodePoint(cp));
+          break;
+        }
+        case "t":
+        case "T":
+          e.preventDefault();
+          cycleTheme();
+          break;
       }
     };
     document.addEventListener("keydown", key);
@@ -230,9 +593,11 @@ const SyllableView: m.Component = {
     vnode.dom.removeEventListener("touchmove", vnode._touchMove);
     document.removeEventListener("keydown", vnode._key);
     window.removeEventListener("hashchange", vnode._hash);
+    if (mediaQuery && vnode._mq) mediaQuery.removeEventListener("change", vnode._mq);
     if (idleTimer) clearTimeout(idleTimer);
     if (autoScrollTimer) clearInterval(autoScrollTimer);
     if (hashTimer) clearTimeout(hashTimer);
+    if (toastTimer) clearTimeout(toastTimer);
   },
 
   view() {
@@ -243,7 +608,9 @@ const SyllableView: m.Component = {
     document.title = `${info.char} — kongli.sh`;
 
     return (
-      <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 box-border">
+      <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
+        {Toolbar()}
+
         <small class="opacity-40 font-mono py-2 text-[clamp(0.7rem,2.5vw,0.9rem)] flex-shrink-0">
           {index + 1}/{SYLLABLE_COUNT.toLocaleString()}
         </small>
@@ -254,7 +621,16 @@ const SyllableView: m.Component = {
           aria-atomic="true"
           aria-label={`Hangul syllable ${info.char}, code point ${info.hex}`}
         >
-          <div class="text-[min(35vw,45vh,20rem)] leading-none">{info.char}</div>
+          <div
+            class="text-[min(35vw,45vh,20rem)] leading-none cursor-pointer"
+            title="Click to copy"
+            onclick={(e: MouseEvent) => {
+              e.stopPropagation();
+              copyCurrent(info.char);
+            }}
+          >
+            {info.char}
+          </div>
         </div>
 
         <div class="flex-shrink-0 flex flex-col items-center w-full pb-[env(safe-area-inset-bottom,0.5rem)]">
@@ -285,6 +661,10 @@ const SyllableView: m.Component = {
             </div>
           </div>
         </div>
+
+        {HelpOverlay()}
+        {m(GotoOverlay)}
+        {Toast()}
       </div>
     );
   },
