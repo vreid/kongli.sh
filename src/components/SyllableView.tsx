@@ -603,7 +603,9 @@ function toggleAutoScrollMute() {
 }
 
 // Theme
-type Theme = "auto" | "light" | "dark";
+type Theme = "auto" | "light" | "dark" | "sunset" | "neon" | "forest" | "ocean" | "candy";
+const THEMES: Theme[] = ["auto", "light", "dark", "sunset", "neon", "forest", "ocean", "candy"];
+const PALETTE_THEMES = new Set<Theme>(["sunset", "neon", "forest", "ocean", "candy"]);
 const THEME_KEY = "kongli.theme";
 let theme: Theme = "auto";
 let mediaQuery: MediaQueryList | null = null;
@@ -611,7 +613,7 @@ let mediaQuery: MediaQueryList | null = null;
 function loadTheme(): Theme {
   try {
     const v = localStorage.getItem(THEME_KEY);
-    if (v === "light" || v === "dark" || v === "auto") return v;
+    if (v && (THEMES as string[]).includes(v)) return v as Theme;
   } catch {
     // ignore
   }
@@ -622,6 +624,7 @@ function applyTheme(t: Theme) {
   const root = document.documentElement;
   const dark = t === "dark" || (t === "auto" && !!mediaQuery?.matches);
   root.classList.toggle("dark", dark);
+  for (const p of PALETTE_THEMES) root.classList.toggle(`theme-${p}`, t === p);
 }
 
 function setTheme(t: Theme) {
@@ -636,8 +639,8 @@ function setTheme(t: Theme) {
 }
 
 function cycleTheme() {
-  const next: Theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
-  setTheme(next);
+  const i = THEMES.indexOf(theme);
+  setTheme(THEMES[(i + 1) % THEMES.length]);
 }
 
 // Overlays / toast
@@ -747,14 +750,29 @@ function renderJamo(jamo: JamoInfo | null, role: "L" | "V" | "T", curIdx: number
 }
 
 const iconBtn =
-  "w-9 h-9 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
+  "kongli-pill w-9 h-9 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
   "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-60 hover:opacity-100 " +
   "transition-opacity text-[1rem] leading-none select-none cursor-pointer";
 
 function themeIcon(): string {
-  if (theme === "light") return "☀";
-  if (theme === "dark") return "☾";
-  return "◐";
+  switch (theme) {
+    case "light":
+      return "☀";
+    case "dark":
+      return "☾";
+    case "sunset":
+      return "🌅";
+    case "neon":
+      return "⚡";
+    case "forest":
+      return "🌲";
+    case "ocean":
+      return "🌊";
+    case "candy":
+      return "🍬";
+    default:
+      return "◐";
+  }
 }
 
 function Toolbar() {
@@ -847,7 +865,7 @@ function PlaybackHud() {
   const canFaster = autoScrollSpeedIdx < AUTO_SCROLL_SPEEDS_MS.length - 1;
   const canSlower = autoScrollSpeedIdx > 0;
   const pillBtn =
-    "w-7 h-7 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
+    "kongli-pill w-7 h-7 flex items-center justify-center rounded-md border border-black/15 dark:border-white/15 " +
     "bg-white/70 dark:bg-black/70 backdrop-blur-sm opacity-70 hover:opacity-100 " +
     "text-[0.85rem] leading-none select-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
   return (
@@ -875,7 +893,7 @@ function PlaybackHud() {
       >
         −
       </button>
-      <span class="px-2 py-1 rounded-md bg-white/70 dark:bg-black/70 backdrop-blur-sm border border-black/10 dark:border-white/10 opacity-70 leading-none tabular-nums">
+      <span class="kongli-pill px-2 py-1 rounded-md bg-white/70 dark:bg-black/70 backdrop-blur-sm border border-black/10 dark:border-white/10 opacity-70 leading-none tabular-nums">
         {ms}ms
       </span>
       <button
@@ -913,7 +931,7 @@ function HelpOverlay() {
       aria-label="Keyboard shortcuts"
     >
       <div
-        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
+        class="kongli-panel max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
         onclick={(e: MouseEvent) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between mb-3">
@@ -1000,7 +1018,7 @@ const GotoOverlay: m.Component = {
         aria-label="Go to syllable"
       >
         <div
-          class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
+          class="kongli-panel max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10"
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
           <label class="block text-sm mb-2 opacity-80" for="goto-input">
@@ -1062,7 +1080,7 @@ function BookmarksOverlay() {
       aria-label="Bookmarks"
     >
       <div
-        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10 max-h-[75vh] overflow-auto"
+        class="kongli-panel max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-black/10 dark:border-white/10 max-h-[75vh] overflow-auto"
         onclick={(e: MouseEvent) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between mb-3">
@@ -1112,7 +1130,7 @@ function Toast() {
   if (!toastMessage) return null;
   return (
     <div
-      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-md bg-black text-white dark:bg-white dark:text-black text-sm shadow-lg"
+      class="kongli-toast fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-md bg-black text-white dark:bg-white dark:text-black text-sm shadow-lg"
       role="status"
       aria-live="polite"
     >
@@ -1467,7 +1485,7 @@ const SyllableView: m.Component = {
     document.title = `${info.char} — kongli.sh`;
 
     return (
-      <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 pt-14 pb-6 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
+      <div class="kongli-glyph flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 pt-14 pb-6 box-border transition-colors">
         <div class="fixed top-2 left-1/2 -translate-x-1/2 z-20">
           {isAutoScrolling() ? PlaybackHud() : Toolbar()}
         </div>
@@ -1523,7 +1541,7 @@ const SyllableView: m.Component = {
             )}
           </div>
 
-          <div class="grid grid-cols-5 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-black/10 dark:border-white/10">
+          <div class="kongli-divider grid grid-cols-5 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-black/10 dark:border-white/10">
             {renderJamo(jamo.leading, "L", decomposeIdx[0])}
             <span class="text-[clamp(0.9rem,3vw,1.5rem)] opacity-30">+</span>
             {renderJamo(jamo.vowel, "V", decomposeIdx[1])}
