@@ -10,6 +10,7 @@ const ASSETS = [
   "/uno.css",
   "/favicon.svg",
   "/manifest.webmanifest",
+  "/privacy.html",
 ];
 
 self.addEventListener("install", (event) => {

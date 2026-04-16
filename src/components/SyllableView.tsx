@@ -802,6 +802,20 @@ function HelpOverlay() {
           Also: click the big syllable to copy it. Scroll, swipe, or press{" "}
           <kbd class="font-mono">a</kbd> to auto-advance.
         </p>
+        <p class="mt-4 text-xs opacity-50">
+          <a class="underline hover:opacity-100" href="/privacy.html">
+            Privacy
+          </a>
+          {" · "}
+          <a
+            class="underline hover:opacity-100"
+            href="https://github.com/vreid/kongli.sh"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Source
+          </a>
+        </p>
       </div>
     </div>
   );
