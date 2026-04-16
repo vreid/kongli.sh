@@ -51,10 +51,12 @@ are not listed — the currently-shipped feature set is described in `PLAN.md` a
 
 - _(done)_ "Animate through all 11,172" — `a` toggles, `+/−` speed, `m` mutes
   the pentatonic tick
+- _(done)_ `/today` — deterministic Hangul syllable per UTC day, redirects into
+  the SPA
 - **Typing trainer** — hidden Dubeolsik keyboard layout overlay; press the keys
   that form the current syllable.
-- **Daily syllable** — `/today` deterministic per UTC day, posted to an RSS
-  feed.
+- **Daily syllable RSS feed** — a /today.xml feed that publishes the current
+  day's syllable for feed readers.
 - **Export syllable as SVG / PNG** for designers making Hangul artwork.
 - **Ink-density bar** — visualize "heavy" vs "light" syllables using the glyph's
   pixel count.

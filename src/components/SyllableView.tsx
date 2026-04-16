@@ -762,7 +762,7 @@ function Toolbar() {
   const playing = isAutoScrolling();
   const locksOn = anyLock();
   return (
-    <div class="fixed top-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-20 flex-wrap justify-center max-w-[calc(100vw-1rem)]">
+    <div class="flex gap-1.5 flex-wrap justify-center max-w-[calc(100vw-1rem)]">
       <button
         type="button"
         class={iconBtn}
@@ -852,10 +852,19 @@ function PlaybackHud() {
     "text-[0.85rem] leading-none select-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
   return (
     <div
-      class="fixed top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 font-mono text-xs"
+      class="flex items-center gap-1.5 font-mono text-xs flex-wrap justify-center max-w-[calc(100vw-1rem)]"
       role="group"
       aria-label="Auto-scroll controls"
     >
+      <button
+        type="button"
+        class={pillBtn}
+        aria-label="Pause auto-scroll"
+        title="Pause (a)"
+        onclick={toggleAutoScroll}
+      >
+        ⏸
+      </button>
       <button
         type="button"
         class={pillBtn}
@@ -1459,8 +1468,9 @@ const SyllableView: m.Component = {
 
     return (
       <div class="flex flex-col items-center h-screen h-dvh overflow-hidden select-none cursor-ns-resize touch-none px-2 pt-14 pb-6 box-border bg-white text-black dark:bg-black dark:text-white transition-colors">
-        {Toolbar()}
-        {PlaybackHud()}
+        <div class="fixed top-2 left-1/2 -translate-x-1/2 z-20">
+          {isAutoScrolling() ? PlaybackHud() : Toolbar()}
+        </div>
 
         <div
           class="flex-1 flex items-center justify-center min-h-0 overflow-hidden w-full"

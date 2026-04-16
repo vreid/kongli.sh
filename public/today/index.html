@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Today's syllable — kongli.sh</title>
+    <meta
+      name="description"
+      content="A deterministic Hangul syllable for every UTC day. Bookmark /today and check back daily."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kongli.sh/today" />
+    <meta property="og:title" content="Today's Hangul syllable — kongli.sh" />
+    <meta property="og:description" content="A deterministic Hangul syllable for every UTC day." />
+    <meta property="og:image" content="https://kongli.sh/og.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Today's Hangul syllable — kongli.sh" />
+    <meta name="twitter:description" content="A deterministic Hangul syllable for every UTC day." />
+    <meta name="twitter:image" content="https://kongli.sh/og.png" />
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        color: #fff;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .msg {
+        opacity: 0.6;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="msg">Redirecting to today's syllable…</p>
+    <script>
+      // Deterministic UTC-day → syllable mapping. Knuth multiplicative
+      // hash on the UTC day number gives a well-spread pick that never
+      // lands on adjacent syllables two days in a row.
+      (function () {
+        var RANGE_START = 0xac00;
+        var COUNT = 11172;
+        var now = new Date();
+        var dayUtc = Math.floor(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 86400000,
+        );
+        // 2654435761 is floor(2^32 / phi); classic Knuth hash multiplier.
+        var idx = Math.imul(dayUtc, 2654435761) >>> 0;
+        idx = idx % COUNT;
+        var cp = RANGE_START + idx;
+        var hex = cp.toString(16).toUpperCase();
+        location.replace("/#" + String.fromCodePoint(cp));
+        document.title = String.fromCodePoint(cp) + " · U+" + hex + " · kongli.sh";
+      })();
+    </script>
+    <noscript>
+      <p>
+        JavaScript is required to compute today's syllable. Pick any from
+        <a href="/" style="color: #fff">kongli.sh</a>.
+      </p>
+    </noscript>
+  </body>
+</html>
