@@ -143,15 +143,13 @@ function withViewTransition(fn: () => void) {
   doc.startViewTransition(fn);
 }
 
-function setIndex(next: number) {
+function wrapOrClamp(next: number): number {
   const n = SYLLABLE_COUNT;
-  let wrapped: number;
-  if (cycleWrap) {
-    wrapped = ((next % n) + n) % n;
-  } else {
-    wrapped = Math.max(0, Math.min(n - 1, next));
-  }
-  index = wrapped;
+  return cycleWrap ? ((next % n) + n) % n : Math.max(0, Math.min(n - 1, next));
+}
+
+function setIndex(next: number) {
+  index = wrapOrClamp(next);
   writeHash();
   scheduleHistoryPush();
   stopAutoScroll();
@@ -239,12 +237,12 @@ function setIndexSmooth(target: number) {
     const t = frame / steps;
     const eased = 1 - Math.pow(1 - t, 3);
     const nextAbs = start + dir * Math.round(distance * eased);
-    index = ((nextAbs % n) + n) % n;
+    index = wrapOrClamp(nextAbs);
     writeHash();
     m.redraw();
     if (frame >= steps) {
       stopSmooth();
-      index = ((target % n) + n) % n;
+      index = wrapOrClamp(target);
       writeHash();
       scheduleHistoryPush();
       m.redraw();
@@ -501,17 +499,18 @@ function getAutoCtx(): AudioContext | null {
   return autoAudioCtx;
 }
 
-// C-major pentatonic: mix all three jamo so the melody still moves when
-// any single slot is locked. Without this, locking the leading consonant
-// freezes the pitch even though the syllable is changing every tick.
+// C-major pentatonic across four octaves, stretched evenly over the whole
+// 0..11171 range. Position in the absolute range drives the pitch, so the
+// melody rises as you move through the Hangul block regardless of which
+// jamo are locked.
 const PENTATONIC_SEMITONES = [0, 2, 4, 7, 9] as const;
+const PITCH_OCTAVES = 4;
+const PITCH_STEPS = PENTATONIC_SEMITONES.length * PITCH_OCTAVES;
 
 function pitchForIndex(i: number): number {
-  const [l, v, t] = decompose(i);
-  // 19 L × 21 V × 28 T = 11172 unique combos; this blend keeps every tick audible.
-  const note = l * 3 + v * 2 + t;
+  const note = Math.min(PITCH_STEPS - 1, Math.floor((i * PITCH_STEPS) / SYLLABLE_COUNT));
   const step = PENTATONIC_SEMITONES[note % PENTATONIC_SEMITONES.length];
-  const octave = Math.floor(note / PENTATONIC_SEMITONES.length) % 4;
+  const octave = Math.floor(note / PENTATONIC_SEMITONES.length);
   const semitones = step + octave * 12;
   return 220 * Math.pow(2, semitones / 12);
 }
@@ -543,19 +542,24 @@ function isAutoScrolling(): boolean {
 const AUTO_SCROLL_ANIMATE_MIN_MS = 400;
 
 function autoScrollTick() {
+  // Same semantics as pressing ArrowDown: step by one locked syllable. Go
+  // through setIndex so wrap/clamp and bounds match manual navigation —
+  // but skip the stopAutoScroll() it does, since we're driving it.
   const next = stepWithLocks(1);
   if (next === index) return;
   playTick(next);
   const ms = AUTO_SCROLL_SPEEDS_MS[autoScrollSpeedIdx];
+  const apply = () => {
+    index = wrapOrClamp(next);
+    writeHash();
+  };
   if (ms >= AUTO_SCROLL_ANIMATE_MIN_MS) {
     withViewTransition(() => {
-      index = next;
-      writeHash();
+      apply();
       m.redraw.sync();
     });
   } else {
-    index = next;
-    writeHash();
+    apply();
     m.redraw();
   }
 }
@@ -1151,15 +1155,21 @@ function Toast() {
 }
 
 function PositionCounter() {
-  const total = lockedTotal();
-  const pos = lockedPosition() + 1;
+  const total = SYLLABLE_COUNT;
+  const pos = index + 1;
+  const locked = anyLock();
   return (
     <div
       class="fixed left-1/2 -translate-x-1/2 bottom-2 z-10 font-mono text-[0.65rem] opacity-40 pointer-events-none leading-none"
       aria-hidden="true"
     >
       {pos.toLocaleString()} / {total.toLocaleString()}
-      {anyLock() && <span class="opacity-70"> · locked</span>}
+      {locked && (
+        <span class="opacity-70">
+          {" · "}
+          {(lockedPosition() + 1).toLocaleString()} / {lockedTotal().toLocaleString()} locked
+        </span>
+      )}
     </div>
   );
 }

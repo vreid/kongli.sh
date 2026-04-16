@@ -894,6 +894,24 @@ functions, call `m.redraw()`."
 pull _pure_ code out without touching anything else, and that's where you get
 the biggest testability win for the least risk.
 
+### Reuse the code that already works
+
+While adding auto-scroll (Chapter 16), the tick wrote a fresh copy of the
+wrap/clamp logic from `setIndex` — `index = next` — and in one branch of
+`nav.stepWithLocks` the step returned `from + delta` with no wrap at all. So
+pressing ArrowDown worked perfectly, but a MIDI tick could walk `index` past
+11171 at the end of the range, and the counter showed "11173 / 11172" for a
+frame. The fix wasn't new math, it was routing the tick through the same
+normalization everything else uses (a single `wrapOrClamp` helper).
+`setIndexSmooth` had the same shape of bug — it _always_ wrapped, ignoring
+`cycleWrap`, so clamp mode silently wrapped during smooth scroll.
+
+**Lesson:** when a new code path misbehaves next to an old one that works, the
+answer is almost always "call the thing the working path calls." Don't invent a
+parallel copy of wrap, bounds, state updates, or side effects — extract a helper
+and share it. A stray `return from + delta` with no wrap is a trap waiting for
+the next caller.
+
 ---
 
 ## Chapter 28 — Accessibility, reduced motion, and other details

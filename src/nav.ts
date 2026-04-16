@@ -71,11 +71,11 @@ export function lockedPosition(idx: number, locks: Locks): number {
 // over any syllable that does not match the active locks. Wraps modulo
 // SYLLABLE_COUNT.
 export function stepWithLocks(from: number, delta: number, locks: Locks): number {
-  if (!anyLock(locks)) return from + delta;
+  const n = SYLLABLE_COUNT;
+  if (!anyLock(locks)) return wrapIndex(n, from + delta);
   const dir = delta > 0 ? 1 : -1;
   let remaining = Math.abs(delta);
   let cur = from;
-  const n = SYLLABLE_COUNT;
   let safety = n;
   while (remaining > 0 && safety-- > 0) {
     cur = wrapIndex(n, cur + dir);
