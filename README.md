@@ -7,8 +7,8 @@
 
 Scroll through every one of the 11,172 precomposed Hangul syllables
 (`U+AC00`–`U+D7A3`) one at a time, with live jamo decomposition (초성 / 중성 /
-종성) and UTF-8 / UTF-16 / UTF-32 encodings. Entirely client-side — no backend,
-no tracking, no build-time character data.
+종성), UTF-8 / UTF-16 / UTF-32 encodings, Revised Romanization, and common
+example words. Entirely client-side — no backend, no tracking.
 
 ## Stack
 
@@ -61,14 +61,20 @@ format/lint/test/build and deploys `dist/` to GitHub Pages. The custom domain
   - `←` / `→` — ±28 (next / previous vowel row)
   - `PageUp` / `PageDown` — ±588 (next / previous initial row)
   - `Home` / `End` — snap to start / end of the current initial
-  - `/` or `g` — **go to** a syllable (가), hex (AC00), or position (1–11172)
+  - `Shift+↑/↓`, `Shift+←/→`, `Shift+PgUp/PgDn` — cycle the initial / vowel /
+    trailing jamo independently (composable explorer)
+  - `/` or `g` — **go to** a syllable (가), hex (AC00), position (1–11172), or
+    romanization (han)
   - `?` or `h` — **help** overlay
   - `c` — **copy** current syllable (also: click the big glyph)
+  - `a` — toggle **auto-advance** (play/pause, ~600 ms per step)
+  - `b` — **bookmark** / unbookmark current syllable (persisted in localStorage)
+  - `l` — **list** bookmarks; click to jump
   - `t` — cycle **theme** (auto / light / dark, remembered in localStorage)
   - `Esc` — close overlay
-- **Idle**: auto-advances after 5 s of no input
-- **Hash**: URL hash = current syllable (`#가`) or hex (`#AC00`), throttled to
-  120 ms
+- **Auto-scroll**: opt-in — press `a` or the ▶ toolbar button; any input pauses.
+- **Hash**: URL hash = current syllable (`#가`), hex (`#AC00`), position
+  (`#pos/1234`), or romanization (`#han`), throttled to 120 ms
 
 ## Unicode scope
 

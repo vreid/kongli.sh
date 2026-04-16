@@ -157,3 +157,42 @@ export function getCharInfo(codePoint: number): CharInfo {
     utf8Bytes: toUtf8Hex(codePoint),
   };
 }
+
+// Revised Romanization of Korean (국립국어원, 2000), standalone-syllable form.
+// Word-level assimilation (ㄱ + ㄴ → ngn etc.) is intentionally not applied —
+// we show single syllables in isolation.
+const ROM_L = [
+  "g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s",
+  "ss", "", "j", "jj", "ch", "k", "t", "p", "h",
+]; // prettier-ignore
+const ROM_V = [
+  "a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa",
+  "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i",
+]; // prettier-ignore
+const ROM_T = [
+  "", "k", "k", "kt", "n", "nj", "nh", "t", "l", "lk",
+  "lm", "lb", "ls", "lt", "lp", "lh", "m", "p", "bs", "s",
+  "ss", "ng", "j", "ch", "k", "t", "p", "h",
+]; // prettier-ignore
+
+export function romanize(codePoint: number): string {
+  const sIndex = codePoint - S_BASE;
+  if (sIndex < 0 || sIndex >= SYLLABLE_COUNT) return String.fromCodePoint(codePoint);
+  const lIndex = Math.floor(sIndex / N_COUNT);
+  const vIndex = Math.floor((sIndex % N_COUNT) / T_COUNT);
+  const tIndex = sIndex % T_COUNT;
+  return ROM_L[lIndex] + ROM_V[vIndex] + ROM_T[tIndex];
+}
+
+// Reverse romanization lookup, built lazily the first time it's needed.
+let romanIndex: Map<string, number> | null = null;
+export function romanToIndex(roman: string): number | null {
+  if (!romanIndex) {
+    romanIndex = new Map();
+    for (let i = 0; i < SYLLABLE_COUNT; i++) {
+      const r = romanize(S_BASE + i);
+      if (!romanIndex.has(r)) romanIndex.set(r, i);
+    }
+  }
+  return romanIndex.get(roman.toLowerCase()) ?? null;
+}

@@ -5,6 +5,8 @@ import {
   getCharInfo,
   toUtf8Hex,
   decomposeSyllable,
+  romanize,
+  romanToIndex,
 } from "./unicode";
 
 describe("HANGUL_SYLLABLES", () => {
@@ -76,4 +78,17 @@ describe("decomposeSyllable", () => {
     expect(d.trailing).not.toBeNull();
     expect(d.trailing!.compatChar).toBe("ㅎ");
   });
+});
+
+describe("romanize", () => {
+  test("가 → ga", () => expect(romanize(0xac00)).toBe("ga"));
+  test("한 → han", () => expect(romanize(0xd55c)).toBe("han"));
+  test("글 → geul", () => expect(romanize(0xae00)).toBe("geul"));
+  test("힣 → hih", () => expect(romanize(0xd7a3)).toBe("hih"));
+});
+
+describe("romanToIndex", () => {
+  test("ga → 0", () => expect(romanToIndex("ga")).toBe(0));
+  test("han → 한 index", () => expect(romanToIndex("han")).toBe(0xd55c - 0xac00));
+  test("bogus → null", () => expect(romanToIndex("xyzzy")).toBeNull());
 });

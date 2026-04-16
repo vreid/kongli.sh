@@ -50,7 +50,8 @@ kongli.sh/
 ├── dev.ts                   # parallel bun build --watch + unocss --watch
 ├── uno.config.ts            # UnoCSS presets & content globs (dark: 'class')
 ├── scripts/
-│   └── gen-og.ts            # renders 1200×630 public/og.png via @napi-rs/canvas
+│   ├── gen-og.ts            # renders 1200×630 public/og.png via @napi-rs/canvas
+│   └── gen-examples.ts      # rebuilds src/data/examples.json from hermitdave ko_50k.txt
 ├── public/
 │   ├── index.html           # mount point, links /fonts.css + /index.css + /uno.css + /index.js
 │   ├── favicon.svg
@@ -68,8 +69,9 @@ kongli.sh/
 │   ├── components/
 │   │   └── SyllableView.tsx # the whole UI
 │   └── data/
-│       ├── unicode.ts       # syllable → jamo decomposition + encodings
-│       └── unicode.test.ts  # bun:test
+│       ├── unicode.ts       # syllable → jamo + romanization + encodings
+│       ├── unicode.test.ts  # bun:test
+│       └── examples.json    # syllable index → top ~3 Korean example words
 └── dist/                    # build output (index.js, index.css, uno.css, index.html)
 ```
 
@@ -85,9 +87,15 @@ kongli.sh/
   - `←` / `→` — ±28 (next / previous vowel row, same initial)
   - `PageUp` / `PageDown` — ±588 (next / previous initial row)
   - `Home` / `End` — snap to first / last syllable of the current initial
-  - `/` or `g` — open "go to" input (syllable, hex, or 1-based position)
+  - `Shift+↑/↓` — cycle the initial consonant only (keep vowel + trailing)
+  - `Shift+←/→` — cycle the vowel only
+  - `Shift+PgUp/PgDn` — cycle the trailing consonant only (including "none")
+  - `/` or `g` — open "go to" input (syllable, hex, position, or romanization)
   - `?` or `h` — toggle help overlay
   - `c` — copy current syllable to clipboard
+  - `a` — toggle auto-advance (play / pause, ~600 ms per step)
+  - `b` — bookmark / unbookmark current syllable
+  - `l` — list bookmarks (click to jump)
   - `t` — cycle theme (auto / light / dark)
   - `Esc` — close any open overlay
 - **Click-to-copy**: clicking the big glyph copies it to the clipboard and shows
@@ -96,8 +104,9 @@ kongli.sh/
   persisted in `localStorage` under `kongli.theme`. The root element gets
   `.dark` when dark mode is active; UnoCSS is configured with
   `presetWind3({ dark: 'class' })`.
-- **Idle auto-scroll**: after `5 s` of no input, advance 1 char per `600 ms`
-  until the next user event. Paused while any overlay is open.
+- **Auto-scroll**: opt-in only. Press `a` or click the ▶ button to start
+  advancing 1 char per `600 ms`; any navigation input (wheel, touch, arrow keys,
+  go-to, bookmarks overlay) pauses it.
 - **Wrap-around**: index wraps modulo 11,172 in both directions.
 
 ## URL hash / deep-linking
@@ -106,6 +115,8 @@ On load and on `hashchange`:
 
 - `#가` (literal syllable, URL-decoded) → jump to that syllable.
 - `#AC00` (hex code point) → jump to that code point.
+- `#han` / `#ga` / `#geul` (Revised-Romanization) → jump to that syllable.
+- `#pos/1234` or just `#1234` → jump to that 1-based position.
 - Out-of-range or empty → start at index 0 (`가`).
 
 On every step, the hash is rewritten via `history.replaceState` to the literal
@@ -119,9 +130,11 @@ Three vertical zones in a full-viewport flex column:
 
 1. **Top**: `index+1 / 11,172` counter.
 2. **Center**: the syllable, sized `min(35vw, 45vh, 20rem)` so it always fits.
-3. **Bottom**: code point (`U+XXXX`), UTF-8 / UTF-16 / UTF-32 bytes, and a
-   7-column grid showing `L + V [+ T] = syllable` with compatibility jamo and
-   role labels (초성 / 중성 / 종성).
+3. **Bottom**: code point + Revised-Romanization (`U+AC00 · ga`), UTF-8 / UTF-16
+   / UTF-32 bytes, up to three common example words (from
+   `src/data/examples.json`), and a 7-column grid showing
+   `L + V [+ T] = syllable` with compatibility jamo and role labels (초성 / 중성
+   / 종성).
 
 `document.title` is updated to `"<char> — kongli.sh"` on each step.
 

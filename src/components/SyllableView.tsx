@@ -2,31 +2,28 @@ import m from "mithril";
 import {
   HANGUL_SYLLABLES,
   SYLLABLE_COUNT,
+  L_COUNT,
+  V_COUNT,
   N_COUNT,
   T_COUNT,
   getCharInfo,
   getEncodings,
   decomposeSyllable,
+  romanize,
+  romanToIndex,
   type JamoInfo,
 } from "../data/unicode";
+import examplesData from "../data/examples.json";
+
+const examples = examplesData as Record<string, string[]>;
 
 let index = 0;
 
 function readHash(): number {
   const h = location.hash.slice(1);
   if (!h) return 0;
-  const cp = parseInt(h, 16);
-  if (!isNaN(cp) && cp >= HANGUL_SYLLABLES.rangeStart && cp <= HANGUL_SYLLABLES.rangeEnd) {
-    return cp - HANGUL_SYLLABLES.rangeStart;
-  }
-  const decoded = decodeURIComponent(h);
-  if (decoded.length === 1 || decoded.length === 2) {
-    const charCp = decoded.codePointAt(0)!;
-    if (charCp >= HANGUL_SYLLABLES.rangeStart && charCp <= HANGUL_SYLLABLES.rangeEnd) {
-      return charCp - HANGUL_SYLLABLES.rangeStart;
-    }
-  }
-  return 0;
+  const parsed = parseGoto(decodeURIComponent(h));
+  return parsed ?? 0;
 }
 
 // Throttle hash writes during rapid motion; flush trailing edge
@@ -111,7 +108,7 @@ function getStep(): number {
 function setIndex(next: number) {
   index = ((next % SYLLABLE_COUNT) + SYLLABLE_COUNT) % SYLLABLE_COUNT;
   writeHash();
-  resetIdle();
+  stopAutoScroll();
   m.redraw();
 }
 
@@ -132,6 +129,84 @@ function jumpBy(delta: number) {
   setIndex(index + delta);
 }
 
+// Composable navigation: cycle a single jamo component (leading / vowel /
+// trailing) while keeping the other two fixed. Scrolling the trailing
+// includes the "no trailing" slot (28 options).
+function decompose(i: number): [number, number, number] {
+  return [Math.floor(i / N_COUNT), Math.floor((i % N_COUNT) / T_COUNT), i % T_COUNT];
+}
+
+function compose(l: number, v: number, t: number): number {
+  return l * N_COUNT + v * T_COUNT + t;
+}
+
+function cycleLeading(delta: number) {
+  const [l, v, t] = decompose(index);
+  setIndex(compose((((l + delta) % L_COUNT) + L_COUNT) % L_COUNT, v, t));
+}
+
+function cycleVowel(delta: number) {
+  const [l, v, t] = decompose(index);
+  setIndex(compose(l, (((v + delta) % V_COUNT) + V_COUNT) % V_COUNT, t));
+}
+
+function cycleTrailing(delta: number) {
+  const [l, v, t] = decompose(index);
+  setIndex(compose(l, v, (((t + delta) % T_COUNT) + T_COUNT) % T_COUNT));
+}
+
+// Text-to-speech was tried but disabled: browser voice availability for
+// single Korean syllables is unreliable (often silent or wrong voice).
+// Kept intentionally unimplemented; see TODO.md for any future retry.
+
+// Bookmarks (starred syllables, persisted in localStorage)
+const BOOKMARKS_KEY = "kongli.bookmarks";
+let bookmarks: Set<number> = new Set();
+
+function loadBookmarks() {
+  try {
+    const raw = localStorage.getItem(BOOKMARKS_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) bookmarks = new Set(arr.filter((n) => typeof n === "number"));
+  } catch {
+    // ignore
+  }
+}
+
+function saveBookmarks() {
+  try {
+    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([...bookmarks]));
+  } catch {
+    // ignore
+  }
+}
+
+function toggleBookmark() {
+  if (bookmarks.has(index)) {
+    bookmarks.delete(index);
+    showToast("Removed bookmark");
+  } else {
+    bookmarks.add(index);
+    showToast("Bookmarked");
+  }
+  saveBookmarks();
+  m.redraw();
+}
+
+let listOpen = false;
+
+function openList() {
+  listOpen = true;
+  stopAutoScroll();
+  m.redraw();
+}
+
+function closeList() {
+  listOpen = false;
+  m.redraw();
+}
+
 function snapToInitialStart() {
   scrollStreak = 0;
   const lIndex = Math.floor(index / N_COUNT);
@@ -144,10 +219,12 @@ function snapToInitialEnd() {
   setIndex(lIndex * N_COUNT + N_COUNT - 1);
 }
 
-const IDLE_TIMEOUT = 5000;
 const AUTO_SCROLL_INTERVAL = 600;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let autoScrollTimer: ReturnType<typeof setInterval> | null = null;
+
+function isAutoScrolling(): boolean {
+  return autoScrollTimer !== null;
+}
 
 function startAutoScroll() {
   if (autoScrollTimer) return;
@@ -156,25 +233,20 @@ function startAutoScroll() {
     writeHash();
     m.redraw();
   }, AUTO_SCROLL_INTERVAL);
+  m.redraw();
 }
 
 function stopAutoScroll() {
   if (autoScrollTimer) {
     clearInterval(autoScrollTimer);
     autoScrollTimer = null;
+    m.redraw();
   }
 }
 
-function startIdleTimer() {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    startAutoScroll();
-  }, IDLE_TIMEOUT);
-}
-
-function resetIdle() {
-  stopAutoScroll();
-  startIdleTimer();
+function toggleAutoScroll() {
+  if (isAutoScrolling()) stopAutoScroll();
+  else startAutoScroll();
 }
 
 // Theme
@@ -246,13 +318,11 @@ async function copyCurrent(char: string) {
 function openHelp() {
   helpOpen = true;
   stopAutoScroll();
-  if (idleTimer) clearTimeout(idleTimer);
   m.redraw();
 }
 
 function closeHelp() {
   helpOpen = false;
-  startIdleTimer();
   m.redraw();
 }
 
@@ -261,14 +331,12 @@ function openGoto() {
   gotoValue = "";
   gotoError = null;
   stopAutoScroll();
-  if (idleTimer) clearTimeout(idleTimer);
   m.redraw();
 }
 
 function closeGoto() {
   gotoOpen = false;
   gotoError = null;
-  startIdleTimer();
   m.redraw();
 }
 
@@ -282,6 +350,12 @@ function parseGoto(raw: string): number | null {
       return cp - HANGUL_SYLLABLES.rangeStart;
     }
   }
+  // "position/N" or "pos/N"
+  const posMatch = s.match(/^(?:position|pos)[/:=](\d+)$/i);
+  if (posMatch) {
+    const pos = parseInt(posMatch[1], 10);
+    if (pos >= 1 && pos <= SYLLABLE_COUNT) return pos - 1;
+  }
   // Hex code point (U+AC00, 0xAC00, #AC00, AC00)
   const hexMatch = s.match(/^(?:u\+|0x|#)?([0-9a-f]+)$/i);
   if (hexMatch) {
@@ -290,10 +364,15 @@ function parseGoto(raw: string): number | null {
       return n - HANGUL_SYLLABLES.rangeStart;
     }
   }
-  // 1-based position
+  // 1-based position (plain digits)
   if (/^\d+$/.test(s)) {
     const pos = parseInt(s, 10);
     if (pos >= 1 && pos <= SYLLABLE_COUNT) return pos - 1;
+  }
+  // Revised-Romanization lookup (e.g. "han", "ga", "geul")
+  if (/^[a-z]+$/i.test(s)) {
+    const idx = romanToIndex(s);
+    if (idx !== null) return idx;
   }
   return null;
 }
@@ -332,8 +411,39 @@ function themeIcon(): string {
 }
 
 function Toolbar() {
+  const bookmarked = bookmarks.has(index);
+  const playing = isAutoScrolling();
   return (
     <div class="fixed top-2 right-2 flex gap-1.5 z-20">
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label={playing ? "Pause auto-scroll" : "Start auto-scroll"}
+        title={playing ? "Pause (a)" : "Auto-scroll (a)"}
+        aria-pressed={playing}
+        onclick={toggleAutoScroll}
+      >
+        {playing ? "⏸" : "▶"}
+      </button>
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label={bookmarked ? "Remove bookmark" : "Bookmark this syllable"}
+        title={bookmarked ? "Unbookmark (b)" : "Bookmark (b)"}
+        aria-pressed={bookmarked}
+        onclick={toggleBookmark}
+      >
+        {bookmarked ? "★" : "☆"}
+      </button>
+      <button
+        type="button"
+        class={iconBtn}
+        aria-label="List bookmarks"
+        title="List bookmarks (l)"
+        onclick={openList}
+      >
+        ≡
+      </button>
       <button
         type="button"
         class={iconBtn}
@@ -391,9 +501,15 @@ function HelpOverlay() {
               ["← / →", "±28 (vowel row)"],
               ["PgUp / PgDn", "±588 (initial row)"],
               ["Home / End", "Start / end of current initial"],
-              ["/", "Go to syllable, hex, or position"],
+              ["Shift + ↑ / ↓", "Cycle initial consonant"],
+              ["Shift + ← / →", "Cycle vowel"],
+              ["Shift + PgUp / PgDn", "Cycle trailing consonant"],
+              ["/", "Go to syllable, hex, position, or romanization"],
               ["?", "Toggle this help"],
               ["c", "Copy current syllable"],
+              ["a", "Toggle auto-scroll (play/pause)"],
+              ["b", "Bookmark current syllable"],
+              ["l", "List bookmarks"],
               ["t", "Cycle theme"],
               ["Esc", "Close overlay"],
             ].map(([k, v]) => (
@@ -405,7 +521,8 @@ function HelpOverlay() {
           </tbody>
         </table>
         <p class="mt-3 text-xs opacity-60">
-          Also: click the big syllable to copy it. Scroll, swipe, or wait 5 s for auto-advance.
+          Also: click the big syllable to copy it. Scroll, swipe, or press{" "}
+          <kbd class="font-mono">a</kbd> to auto-advance.
         </p>
       </div>
     </div>
@@ -432,7 +549,7 @@ const GotoOverlay: m.Component = {
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
           <label class="block text-sm mb-2 opacity-80" for="goto-input">
-            Go to: syllable (가), hex (AC00), or position (1–11172)
+            Go to: syllable (가), hex (AC00), position (1–11172), or romanization (han)
           </label>
           <input
             id="goto-input"
@@ -478,6 +595,64 @@ const GotoOverlay: m.Component = {
   },
 };
 
+function BookmarksOverlay() {
+  if (!listOpen) return null;
+  const items = [...bookmarks].toSorted((a, b) => a - b);
+  return (
+    <div
+      class="fixed inset-0 z-30 flex items-start justify-center bg-black/60 p-4 pt-[10vh]"
+      onclick={closeList}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Bookmarks"
+    >
+      <div
+        class="max-w-md w-full rounded-lg bg-white text-black dark:bg-neutral-900 dark:text-white p-5 shadow-xl border border-current/10 max-h-[75vh] overflow-auto"
+        onclick={(e: MouseEvent) => e.stopPropagation()}
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="m-0 text-lg font-semibold">Bookmarks ({items.length})</h2>
+          <button
+            type="button"
+            class="opacity-60 hover:opacity-100 text-xl leading-none cursor-pointer"
+            aria-label="Close"
+            onclick={closeList}
+          >
+            ×
+          </button>
+        </div>
+        {items.length === 0 ? (
+          <p class="opacity-60 text-sm m-0">
+            No bookmarks yet. Press <kbd class="font-mono">b</kbd> to bookmark the current syllable.
+          </p>
+        ) : (
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-2">
+            {items.map((i) => {
+              const c = String.fromCodePoint(HANGUL_SYLLABLES.rangeStart + i);
+              return (
+                <button
+                  type="button"
+                  class="flex flex-col items-center gap-0.5 py-2 rounded border border-current/10 hover:bg-current/5 cursor-pointer"
+                  onclick={() => {
+                    setIndex(i);
+                    closeList();
+                  }}
+                  title={`${c} · ${romanize(HANGUL_SYLLABLES.rangeStart + i)}`}
+                >
+                  <span class="text-2xl leading-none">{c}</span>
+                  <span class="font-mono text-[0.65rem] opacity-60">
+                    {romanize(HANGUL_SYLLABLES.rangeStart + i)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Toast() {
   if (!toastMessage) return null;
   return (
@@ -497,6 +672,7 @@ const SyllableView: m.Component = {
     theme = loadTheme();
     mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     applyTheme(theme);
+    loadBookmarks();
     const mqListener = () => {
       if (theme === "auto") applyTheme("auto");
     };
@@ -504,7 +680,7 @@ const SyllableView: m.Component = {
     vnode._mq = mqListener;
 
     const wheel = (e: WheelEvent) => {
-      if (helpOpen || gotoOpen) return;
+      if (helpOpen || gotoOpen || listOpen) return;
       e.preventDefault();
       advance(e.deltaY > 0 ? 1 : -1);
     };
@@ -515,13 +691,12 @@ const SyllableView: m.Component = {
     let touchAccum = 0;
     const TOUCH_THRESHOLD = 30;
     const touchStart = (e: TouchEvent) => {
-      if (helpOpen || gotoOpen) return;
+      if (helpOpen || gotoOpen || listOpen) return;
       touchY = e.touches[0].clientY;
       touchAccum = 0;
-      resetIdle();
     };
     const touchMove = (e: TouchEvent) => {
-      if (helpOpen || gotoOpen) return;
+      if (helpOpen || gotoOpen || listOpen) return;
       e.preventDefault();
       const y = e.touches[0].clientY;
       touchAccum += touchY - y;
@@ -542,6 +717,11 @@ const SyllableView: m.Component = {
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
 
       if (e.key === "Escape") {
+        if (listOpen) {
+          e.preventDefault();
+          closeList();
+          return;
+        }
         if (gotoOpen) {
           e.preventDefault();
           closeGoto();
@@ -554,8 +734,38 @@ const SyllableView: m.Component = {
         }
       }
 
-      if (helpOpen || gotoOpen) return;
+      if (helpOpen || gotoOpen || listOpen) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Composable explorer: Shift + ↑/↓/←/→ cycles a single jamo
+      if (e.shiftKey) {
+        switch (e.key) {
+          case "ArrowDown":
+            e.preventDefault();
+            cycleLeading(1);
+            return;
+          case "ArrowUp":
+            e.preventDefault();
+            cycleLeading(-1);
+            return;
+          case "ArrowRight":
+            e.preventDefault();
+            cycleVowel(1);
+            return;
+          case "ArrowLeft":
+            e.preventDefault();
+            cycleVowel(-1);
+            return;
+          case "PageDown":
+            e.preventDefault();
+            cycleTrailing(1);
+            return;
+          case "PageUp":
+            e.preventDefault();
+            cycleTrailing(-1);
+            return;
+        }
+      }
 
       switch (e.key) {
         case "ArrowDown":
@@ -614,6 +824,21 @@ const SyllableView: m.Component = {
           e.preventDefault();
           cycleTheme();
           break;
+        case "a":
+        case "A":
+          e.preventDefault();
+          toggleAutoScroll();
+          break;
+        case "b":
+        case "B":
+          e.preventDefault();
+          toggleBookmark();
+          break;
+        case "l":
+        case "L":
+          e.preventDefault();
+          openList();
+          break;
       }
     };
     document.addEventListener("keydown", key);
@@ -625,8 +850,6 @@ const SyllableView: m.Component = {
     };
     window.addEventListener("hashchange", hashChange);
     vnode._hash = hashChange;
-
-    startIdleTimer();
 
     // Warm up optical centering once the font is ready
     if (document.fonts && document.fonts.ready) {
@@ -646,7 +869,6 @@ const SyllableView: m.Component = {
     document.removeEventListener("keydown", vnode._key);
     window.removeEventListener("hashchange", vnode._hash);
     if (mediaQuery && vnode._mq) mediaQuery.removeEventListener("change", vnode._mq);
-    if (idleTimer) clearTimeout(idleTimer);
     if (autoScrollTimer) clearInterval(autoScrollTimer);
     if (hashTimer) clearTimeout(hashTimer);
     if (toastTimer) clearTimeout(toastTimer);
@@ -657,6 +879,8 @@ const SyllableView: m.Component = {
     const info = getCharInfo(cp);
     const jamo = decomposeSyllable(cp);
     const enc = getEncodings(cp);
+    const roman = romanize(cp);
+    const words = examples[String(index)] ?? [];
     document.title = `${info.char} — kongli.sh`;
 
     return (
@@ -687,10 +911,31 @@ const SyllableView: m.Component = {
         </div>
 
         <div class="flex-shrink-0 flex flex-col items-center w-full pb-[env(safe-area-inset-bottom,0.5rem)]">
-          <p class="m-0 font-mono opacity-70 text-[clamp(0.9rem,3.5vw,1.4rem)]">{info.hex}</p>
+          <p class="m-0 font-mono opacity-70 text-[clamp(0.9rem,3.5vw,1.4rem)]">
+            {info.hex} · <span class="italic">{roman}</span>
+          </p>
           <small class="opacity-45 font-mono text-center leading-relaxed text-[clamp(0.6rem,2.5vw,0.85rem)]">
             UTF-8: {enc.utf8} · UTF-16: {enc.utf16} · UTF-32: {enc.utf32}
           </small>
+          <div
+            class="flex flex-wrap gap-x-2 gap-y-1 justify-center mt-1 opacity-70 text-[clamp(0.75rem,2.8vw,1rem)] min-h-[1.5em]"
+            aria-label={words.length > 0 ? `Example words: ${words.join(", ")}` : undefined}
+          >
+            {words.length === 0 ? (
+              <span aria-hidden="true" class="opacity-0 select-none">
+                &nbsp;
+              </span>
+            ) : (
+              words.map((w, i) => [
+                i > 0 && (
+                  <span class="opacity-40 select-none" aria-hidden="true">
+                    ·
+                  </span>
+                ),
+                <span class="whitespace-nowrap">{w}</span>,
+              ])
+            )}
+          </div>
 
           <div class="grid grid-cols-7 items-center justify-items-center w-full max-w-[40rem] mt-2 py-2 border-t border-current/10">
             {renderJamo(jamo.leading)}
@@ -717,6 +962,7 @@ const SyllableView: m.Component = {
 
         {HelpOverlay()}
         {m(GotoOverlay)}
+        {BookmarksOverlay()}
         {Toast()}
       </div>
     );
