@@ -29,29 +29,49 @@ const S_BASE = 0xac00;
 const L_BASE = 0x1100;
 const V_BASE = 0x1161;
 const T_BASE = 0x11a7;
-const L_COUNT = 19;
-const V_COUNT = 21;
-const T_COUNT = 28;
-const N_COUNT = V_COUNT * T_COUNT;
+export const L_COUNT = 19;
+export const V_COUNT = 21;
+export const T_COUNT = 28;
+export const N_COUNT = V_COUNT * T_COUNT;
 
 // Compatibility Jamo for display (these render as standalone letters)
-const COMPAT_L_BASE = 0x3131;
 const COMPAT_L: number[] = [
-  0x3131, 0x3132, 0x3134, 0x3137, 0x3138, 0x3139, 0x3141, 0x3142,
-  0x3143, 0x3145, 0x3146, 0x3147, 0x3148, 0x3149, 0x314a, 0x314b,
-  0x314c, 0x314d, 0x314e,
+  0x3131, 0x3132, 0x3134, 0x3137, 0x3138, 0x3139, 0x3141, 0x3142, 0x3143, 0x3145, 0x3146, 0x3147,
+  0x3148, 0x3149, 0x314a, 0x314b, 0x314c, 0x314d, 0x314e,
 ];
 const COMPAT_V: number[] = [
-  0x314f, 0x3150, 0x3151, 0x3152, 0x3153, 0x3154, 0x3155, 0x3156,
-  0x3157, 0x3158, 0x3159, 0x315a, 0x315b, 0x315c, 0x315d, 0x315e,
-  0x315f, 0x3160, 0x3161, 0x3162, 0x3163,
+  0x314f, 0x3150, 0x3151, 0x3152, 0x3153, 0x3154, 0x3155, 0x3156, 0x3157, 0x3158, 0x3159, 0x315a,
+  0x315b, 0x315c, 0x315d, 0x315e, 0x315f, 0x3160, 0x3161, 0x3162, 0x3163,
 ];
 const COMPAT_T: number[] = [
   0, // no trailing
-  0x3131, 0x3132, 0x3133, 0x3134, 0x3135, 0x3136, 0x3137, 0x3139,
-  0x313a, 0x313b, 0x313c, 0x313d, 0x313e, 0x313f, 0x3140, 0x3141,
-  0x3142, 0x3144, 0x3145, 0x3146, 0x3147, 0x3148, 0x314a, 0x314b,
-  0x314c, 0x314d, 0x314e,
+  0x3131,
+  0x3132,
+  0x3133,
+  0x3134,
+  0x3135,
+  0x3136,
+  0x3137,
+  0x3139,
+  0x313a,
+  0x313b,
+  0x313c,
+  0x313d,
+  0x313e,
+  0x313f,
+  0x3140,
+  0x3141,
+  0x3142,
+  0x3144,
+  0x3145,
+  0x3146,
+  0x3147,
+  0x3148,
+  0x314a,
+  0x314b,
+  0x314c,
+  0x314d,
+  0x314e,
 ];
 
 export interface JamoInfo {
@@ -73,7 +93,7 @@ function makeJamoInfo(
   jamoCP: number,
   compatCP: number,
   role: "leading" | "vowel" | "trailing",
-  roleName: string
+  roleName: string,
 ): JamoInfo {
   return {
     char: String.fromCodePoint(jamoCP),
@@ -94,9 +114,7 @@ export function decomposeSyllable(codePoint: number): SyllableDecomposition {
   const leading = makeJamoInfo(L_BASE + lIndex, COMPAT_L[lIndex], "leading", "초성 (Initial)");
   const vowel = makeJamoInfo(V_BASE + vIndex, COMPAT_V[vIndex], "vowel", "중성 (Medial)");
   const trailing =
-    tIndex > 0
-      ? makeJamoInfo(T_BASE + tIndex, COMPAT_T[tIndex], "trailing", "종성 (Final)")
-      : null;
+    tIndex > 0 ? makeJamoInfo(T_BASE + tIndex, COMPAT_T[tIndex], "trailing", "종성 (Final)") : null;
 
   return { leading, vowel, trailing };
 }
@@ -104,12 +122,6 @@ export function decomposeSyllable(codePoint: number): SyllableDecomposition {
 export function toUtf8Hex(codePoint: number): string {
   const bytes = new TextEncoder().encode(String.fromCodePoint(codePoint));
   return Array.from(bytes)
-    .map((b) => b.toString(16).toUpperCase().padStart(2, "0"))
-    .join(" ");
-}
-
-function toHexBytes(arr: ArrayLike<number>): string {
-  return Array.from(arr)
     .map((b) => b.toString(16).toUpperCase().padStart(2, "0"))
     .join(" ");
 }
@@ -129,9 +141,7 @@ export function getEncodings(codePoint: number): Encodings {
   for (let i = 0; i < char.length; i++) {
     utf16Codes.push(char.charCodeAt(i));
   }
-  const utf16 = utf16Codes
-    .map((c) => c.toString(16).toUpperCase().padStart(4, "0"))
-    .join(" ");
+  const utf16 = utf16Codes.map((c) => c.toString(16).toUpperCase().padStart(4, "0")).join(" ");
 
   const utf32 = codePoint.toString(16).toUpperCase().padStart(8, "0");
 

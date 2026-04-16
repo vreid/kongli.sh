@@ -6,7 +6,7 @@ Browse and explore Korean character Unicode ranges, entirely client-side.
 
 - **Bun** — build & test
 - **Mithril.js** — SPA framework (~10KB gzipped)
-- **PicoCSS** — classless CSS via CDN
+- **UnoCSS** — on-demand utility classes (preset-wind3, ~4 KB generated)
 - **Caddy** — production server (auto-HTTPS, gzip, SPA fallback)
 - **Docker** — multi-stage build → deploy
 
@@ -31,6 +31,19 @@ bun run build     # minified production bundle → dist/
 bun test          # runs bun:test suite
 ```
 
+## Lint
+
+```bash
+bun run lint      # oxlint (strict correctness + suspicious + perf)
+```
+
+## Format
+
+```bash
+bun run format        # prettier --write .
+bun run format:check  # prettier --check . (CI-friendly)
+```
+
 ## Deploy with Docker
 
 ```bash
@@ -42,10 +55,10 @@ Caddy auto-serves from `/srv` with gzip and SPA fallback.
 
 ## Unicode Blocks
 
-| Block                     | Range            | Count  |
-| ------------------------- | ---------------- | ------ |
-| Hangul Jamo               | U+1100–U+11FF   | 256    |
-| Hangul Compatibility Jamo | U+3130–U+318F   | 96     |
-| Hangul Syllables          | U+AC00–U+D7AF   | 11,184 |
-| Hangul Jamo Extended-A    | U+A960–U+A97F   | 32     |
-| Hangul Jamo Extended-B    | U+D7B0–U+D7FF   | 80     |
+| Block                     | Range         | Count  |
+| ------------------------- | ------------- | ------ |
+| Hangul Jamo               | U+1100–U+11FF | 256    |
+| Hangul Compatibility Jamo | U+3130–U+318F | 96     |
+| Hangul Syllables          | U+AC00–U+D7AF | 11,184 |
+| Hangul Jamo Extended-A    | U+A960–U+A97F | 32     |
+| Hangul Jamo Extended-B    | U+D7B0–U+D7FF | 80     |

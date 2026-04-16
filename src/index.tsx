@@ -1,5 +1,5 @@
-import "@picocss/pico/css/pico.classless.min.css";
+import "@unocss/reset/tailwind.css";
 import m from "mithril";
-import CharView from "./components/CharGrid";
+import SyllableView from "./components/SyllableView";
 
-m.mount(document.getElementById("app")!, CharView);
+m.mount(document.getElementById("app")!, SyllableView);
